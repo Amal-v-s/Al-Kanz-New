@@ -322,6 +322,7 @@ function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState(null);
+  const [selectedJob, setSelectedJob] = useState(null);
   const [search, setSearch] = useState("");
 
   const totalSales = jobs.reduce((a, b) => a + b.amount, 0);
@@ -363,6 +364,39 @@ function App() {
 
     setModal(null);
     setPage("Active Jobs");
+  };
+
+  const updateJobStatus = (jobId, status) => {
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === jobId ? { ...job, status } : job
+      )
+    );
+
+    setSelectedJob((prev) =>
+      prev && prev.id === jobId
+        ? { ...prev, status }
+        : prev
+    );
+  };
+
+  const recordPayment = (jobId, payment) => {
+    const amount = Number(payment);
+    if (!amount || amount <= 0) return;
+
+    setJobs((prev) =>
+      prev.map((job) => {
+        if (job.id !== jobId) return job;
+        const paid = Math.min(job.amount, (job.paid || 0) + amount);
+        return { ...job, paid };
+      })
+    );
+
+    setSelectedJob((prev) => {
+      if (!prev || prev.id !== jobId) return prev;
+      const paid = Math.min(prev.amount, (prev.paid || 0) + amount);
+      return { ...prev, paid };
+    });
   };
 
   const addCustomer = (customer) => {
@@ -603,6 +637,7 @@ function App() {
                 title={page}
                 jobs={filteredJobs}
                 setModal={setModal}
+                onViewJob={setSelectedJob}
               />
             )}
 
@@ -667,6 +702,15 @@ function App() {
             )}
           </div>
         </main>
+
+        {selectedJob && (
+          <JobDetailsDrawer
+            job={selectedJob}
+            close={() => setSelectedJob(null)}
+            updateStatus={updateJobStatus}
+            recordPayment={recordPayment}
+          />
+        )}
 
         {/* =====================================================
             MODALS
@@ -1177,90 +1221,418 @@ function JobsPage({
   title,
   jobs,
   setModal,
+  onViewJob,
 }) {
-  const filtered =
-    title === "Active Jobs"
-      ? jobs.filter(
-          (j) => j.status === "In Progress"
-        )
-      : title === "Completed Jobs"
-      ? jobs.filter(
-          (j) => j.status === "Ready"
-        )
-      : title === "Delivered"
-      ? jobs.filter(
-          (j) => j.status === "Delivered"
-        )
-      : jobs;
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("All status");
+
+  const filtered = jobs.filter((job) => {
+    const sectionMatch =
+      title === "Active Jobs"
+        ? ["Received", "Inspection", "In Progress"].includes(job.status)
+        : title === "Completed Jobs"
+        ? job.status === "Ready"
+        : title === "Delivered"
+        ? job.status === "Delivered"
+        : true;
+
+    const q = query.toLowerCase();
+    const searchMatch =
+      !q ||
+      `${job.id} ${job.customer} ${job.phone} ${job.item} ${job.work}`
+        .toLowerCase()
+        .includes(q);
+
+    const statusMatch =
+      status === "All status" || job.status === status;
+
+    return sectionMatch && searchMatch && statusMatch;
+  });
 
   return (
-    <>
-      <PageTitle
-        eyebrow="WORKSHOP"
-        title={title}
-        subtitle="Manage upholstery and repair work."
-        button="New Repair Job"
-        onClick={() => setModal("job")}
-      />
-
-      <div className="toolbar">
-        <div className="filter-search">
-          <Search size={16} />
-          <input placeholder="Search repair jobs..." />
+    <div className="jobs-page-modern">
+      <div className="jobs-page-header">
+        <div>
+          <div className="jobs-breadcrumb">
+            Al Kanz <ChevronRight size={14} /> <strong>{title}</strong>
+          </div>
+          <div className="jobs-eyebrow">WORKSHOP</div>
+          <h1>{title}</h1>
+          <p>Manage upholstery and repair work.</p>
         </div>
 
-        <button className="filter-button">
-          All status <ChevronDown size={14} />
+        <button
+          className="jobs-new-button"
+          onClick={() => setModal("job")}
+        >
+          <Plus size={19} />
+          New Repair Job
         </button>
       </div>
 
-      <div className="table-card">
-        <div className="table-head">
+      <div className="jobs-toolbar-modern">
+        <div className="jobs-search-modern">
+          <Search size={19} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search repair jobs..."
+          />
+          {query && (
+            <button onClick={() => setQuery("")}>×</button>
+          )}
+        </div>
+
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="jobs-status-filter"
+        >
+          <option>All status</option>
+          <option>Received</option>
+          <option>Inspection</option>
+          <option>In Progress</option>
+          <option>Ready</option>
+          <option>Delivered</option>
+        </select>
+      </div>
+
+      <div className="jobs-modern-card">
+        <div className="jobs-modern-head">
           <span>JOB</span>
           <span>CUSTOMER</span>
-          <span>WORK</span>
+          <span>ITEM / WORK</span>
           <span>STATUS</span>
           <span>AMOUNT</span>
           <span>BALANCE</span>
-          <span />
+          <span></span>
         </div>
 
-        {filtered.map((job) => (
-          <div className="table-row" key={job.id}>
-            <strong>{job.id}</strong>
+        {filtered.map((job) => {
+          const balance = Math.max(
+            0,
+            Number(job.amount || 0) - Number(job.paid || 0)
+          );
 
-            <div>
-              <strong>{job.customer}</strong>
-              <small>{job.phone}</small>
+          return (
+            <div className="jobs-modern-row" key={job.id}>
+              <div className="jobs-id-cell">
+                <strong>{job.id}</strong>
+                <small>{job.date}</small>
+              </div>
+
+              <div className="jobs-customer-cell">
+                <strong>{job.customer}</strong>
+                <small>{job.phone}</small>
+              </div>
+
+              <div className="jobs-work-cell">
+                <strong>{job.item}</strong>
+                <small>{job.work}</small>
+              </div>
+
+              <Status status={job.status} />
+
+              <strong className="jobs-money">
+                {money(job.amount)}
+              </strong>
+
+              <strong
+                className={`jobs-balance ${balance === 0 ? "paid" : ""}`}
+              >
+                {money(balance)}
+              </strong>
+
+              <button
+                className="jobs-view-button"
+                onClick={() => onViewJob(job)}
+                aria-label={`View ${job.id}`}
+              >
+                <Eye size={19} />
+              </button>
             </div>
+          );
+        })}
 
-            <div>
-              <strong>{job.item}</strong>
-              <small>{job.work}</small>
-            </div>
-
-            <Status status={job.status} />
-
-            <strong>{money(job.amount)}</strong>
-
-            <strong>
-              {money(job.amount - job.paid)}
-            </strong>
-
-            <button className="row-action">
-              <Eye size={16} />
-            </button>
-          </div>
-        ))}
-
-        {filtered.length === 0 && (
+        {!filtered.length && (
           <EmptyState
             icon={ClipboardList}
             title="No jobs found"
-            text="There are no jobs in this section yet."
+            text="There are no jobs matching your filters."
           />
         )}
+
+        <div className="jobs-modern-footer">
+          Showing {filtered.length} of {jobs.length} jobs
+        </div>
       </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   JOB DETAILS DRAWER
+============================================================ */
+
+function JobDetailsDrawer({
+  job,
+  close,
+  updateStatus,
+  recordPayment,
+}) {
+  const [payment, setPayment] = useState("");
+  const [showPayment, setShowPayment] = useState(false);
+
+  const balance = Math.max(
+    0,
+    Number(job.amount || 0) - Number(job.paid || 0)
+  );
+
+  const steps = [
+    "Received",
+    "Inspection",
+    "In Progress",
+    "Ready",
+    "Delivered",
+  ];
+
+  const currentIndex = Math.max(
+    0,
+    steps.indexOf(job.status)
+  );
+
+  const submitPayment = () => {
+    const amount = Number(payment);
+    if (!amount || amount <= 0) {
+      alert("Enter a valid payment amount.");
+      return;
+    }
+    if (amount > balance) {
+      alert("Payment cannot be greater than the balance.");
+      return;
+    }
+    recordPayment(job.id, amount);
+    setPayment("");
+    setShowPayment(false);
+  };
+
+  return (
+    <>
+      <div className="job-drawer-overlay" onClick={close} />
+
+      <aside className="job-drawer">
+        <div className="job-drawer-header">
+          <div>
+            <span>REPAIR JOB</span>
+            <h2>{job.id}</h2>
+            <p>{job.date}</p>
+          </div>
+
+          <button className="job-drawer-close" onClick={close}>
+            <X size={22} />
+          </button>
+        </div>
+
+        <div className="job-drawer-body">
+          <div className="job-detail-grid">
+            <div className="job-detail-box">
+              <div className="job-detail-label">
+                <UserRound size={17} /> CUSTOMER
+              </div>
+              <strong>{job.customer}</strong>
+              <p><Phone size={14} /> {job.phone}</p>
+            </div>
+
+            <div className="job-detail-box">
+              <div className="job-detail-label">
+                <Sofa size={17} /> ITEM
+              </div>
+              <strong>{job.item}</strong>
+              <p>{job.work}</p>
+            </div>
+          </div>
+
+          <div className="job-detail-grid">
+            <div className="job-detail-box">
+              <div className="job-detail-label">
+                <Package size={17} /> MATERIAL
+              </div>
+              <strong>{job.material || "Not specified"}</strong>
+              <p>{job.colour || "Colour not specified"}</p>
+              <small>Quantity: {job.quantity || 1}</small>
+            </div>
+
+            <div className="job-detail-box">
+              <div className="job-detail-label">
+                <CalendarDays size={17} /> DELIVERY
+              </div>
+              <strong>
+                {job.deliveryDate || "Not scheduled"}
+              </strong>
+              <p>Expected delivery</p>
+            </div>
+          </div>
+
+          <section className="job-detail-section">
+            <div className="job-section-title">
+              <FileText size={18} /> BILLING BREAKDOWN
+            </div>
+
+            <div className="job-money-row">
+              <span>Material Cost</span>
+              <strong>{money(job.materialCost || 0)}</strong>
+            </div>
+            <div className="job-money-row">
+              <span>Labour Charge</span>
+              <strong>{money(job.labour || 0)}</strong>
+            </div>
+            <div className="job-money-row">
+              <span>Other Charges</span>
+              <strong>{money(job.otherCharges || 0)}</strong>
+            </div>
+            <div className="job-money-row discount">
+              <span>Discount</span>
+              <strong>-{money(job.discount || 0)}</strong>
+            </div>
+
+            <div className="job-total-row">
+              <span>TOTAL</span>
+              <strong>{money(job.amount || 0)}</strong>
+            </div>
+          </section>
+
+          <section className="job-detail-section">
+            <div className="job-section-title">
+              <CircleDollarSign size={18} /> PAYMENT
+            </div>
+
+            <div className="job-money-row">
+              <span>Paid</span>
+              <strong className="job-paid">
+                {money(job.paid || 0)}
+              </strong>
+            </div>
+
+            <div className="job-balance-row">
+              <span>BALANCE DUE</span>
+              <strong>{money(balance)}</strong>
+            </div>
+
+            {!showPayment ? (
+              <button
+                className="job-payment-button"
+                onClick={() => setShowPayment(true)}
+                disabled={balance === 0}
+              >
+                <CreditCard size={17} />
+                {balance === 0 ? "Fully Paid" : "Record Payment"}
+              </button>
+            ) : (
+              <div className="job-payment-form">
+                <label>Payment amount</label>
+                <div className="job-payment-input">
+                  <span>₹</span>
+                  <input
+                    autoFocus
+                    type="number"
+                    min="0"
+                    max={balance}
+                    value={payment}
+                    onChange={(e) => setPayment(e.target.value)}
+                    placeholder="Enter amount"
+                  />
+                </div>
+                <div className="job-payment-actions">
+                  <button onClick={() => setShowPayment(false)}>
+                    Cancel
+                  </button>
+                  <button onClick={submitPayment}>
+                    Save Payment
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="job-detail-section">
+            <div className="job-section-title">
+              <ClipboardList size={18} /> JOB STATUS
+            </div>
+
+            <div className="job-status-timeline">
+              {steps.map((step, index) => {
+                const active = index <= currentIndex;
+                return (
+                  <div
+                    className={`job-status-step ${active ? "active" : ""} ${
+                      step === job.status ? "current" : ""
+                    }`}
+                    key={step}
+                  >
+                    <div className="job-status-dot">
+                      {active && <CheckCircle2 size={13} />}
+                    </div>
+                    <span>{step}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <label className="job-status-label">
+              Change status
+              <select
+                value={job.status}
+                onChange={(e) =>
+                  updateStatus(job.id, e.target.value)
+                }
+              >
+                {steps.map((step) => (
+                  <option key={step}>{step}</option>
+                ))}
+              </select>
+            </label>
+          </section>
+
+          <section className="job-detail-section">
+            <div className="job-section-title">
+              ACTIONS
+            </div>
+
+            <div className="job-action-grid">
+              <button
+                onClick={() =>
+                  alert(
+                    `Invoice for ${job.id}\nTotal: ${money(job.amount)}\nBalance: ${money(balance)}`
+                  )
+                }
+              >
+                <FileText size={17} />
+                Create Invoice
+              </button>
+
+              <button
+                onClick={() =>
+                  alert(
+                    `Job ${job.id} is currently ${job.status}.`
+                  )
+                }
+              >
+                <CheckCircle2 size={17} />
+                Job Summary
+              </button>
+            </div>
+          </section>
+
+          <section className="job-detail-section">
+            <div className="job-section-title">
+              NOTES
+            </div>
+            <p className="job-notes">
+              {job.notes || "No notes added for this job."}
+            </p>
+          </section>
+        </div>
+      </aside>
     </>
   );
 }
@@ -1964,144 +2336,266 @@ function JobModal({ close, save }) {
     customer: "",
     phone: "",
     item: "3-Seater Sofa",
+    description: "",
     work: "Full Leather Replacement",
     material: "Premium Leather",
-    amount: "",
+    colour: "",
+    quantity: "1",
+    materialCost: "",
+    labour: "",
+    otherCharges: "",
+    discount: "",
     paid: "",
+    deliveryDate: "",
+    notes: "",
   });
 
   const update = (key, value) =>
-    setForm((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  const materialCost = Number(form.materialCost || 0);
+  const labour = Number(form.labour || 0);
+  const otherCharges = Number(form.otherCharges || 0);
+  const discount = Number(form.discount || 0);
+  const paid = Number(form.paid || 0);
+
+  const total = Math.max(
+    materialCost + labour + otherCharges - discount,
+    0
+  );
+
+  const balance = Math.max(total - paid, 0);
 
   const submit = (e) => {
     e.preventDefault();
 
-    if (!form.customer || !form.amount) {
-      alert(
-        "Please enter customer name and amount."
-      );
+    if (!form.customer.trim()) {
+      alert("Please enter customer name.");
+      return;
+    }
+
+    if (!form.phone.trim()) {
+      alert("Please enter phone number.");
+      return;
+    }
+
+    if (total <= 0) {
+      alert("Please enter at least one charge.");
+      return;
+    }
+
+    if (paid > total) {
+      alert("Advance cannot be greater than total.");
       return;
     }
 
     save({
       ...form,
-      amount: Number(form.amount),
-      paid: Number(form.paid || 0),
+      customer: form.customer.trim(),
+      phone: form.phone.trim(),
+      quantity: Number(form.quantity || 1),
+      materialCost,
+      labour,
+      otherCharges,
+      discount,
+      amount: total,
+      paid,
+      balance,
     });
   };
 
   return (
     <Modal
       title="New Repair Job"
-      subtitle="Create a new upholstery or repair job."
+      subtitle="Create a complete upholstery repair job."
       close={close}
     >
-      <form onSubmit={submit}>
+      <form onSubmit={submit} className="new-job-form">
+        <div className="job-form-section-title">
+          <span>CUSTOMER</span>
+          <p>Customer information</p>
+        </div>
+
         <div className="modal-grid">
           <Field
             label="Customer name"
             value={form.customer}
-            onChange={(v) =>
-              update("customer", v)
-            }
+            onChange={(v) => update("customer", v)}
             placeholder="Enter customer name"
           />
-
           <Field
             label="Phone number"
             value={form.phone}
-            onChange={(v) =>
-              update("phone", v)
-            }
+            onChange={(v) => update("phone", v)}
             placeholder="+91 XXXXX XXXXX"
           />
+        </div>
 
+        <div className="job-form-section-title">
+          <span>ITEM & REPAIR</span>
+          <p>What is being repaired or re-upholstered?</p>
+        </div>
+
+        <div className="modal-grid">
           <SelectField
             label="Item"
             value={form.item}
-            onChange={(v) =>
-              update("item", v)
-            }
+            onChange={(v) => update("item", v)}
             options={[
               "3-Seater Sofa",
               "2-Seater Sofa",
+              "L-Shape Sofa",
               "Recliner",
               "Dining Chairs",
-              "Car Seat",
+              "Office Chair",
               "Office Sofa",
+              "Car Seat",
+              "Headboard",
+              "Ottoman",
+              "Other",
             ]}
+          />
+
+          <Field
+            label="Quantity"
+            type="number"
+            value={form.quantity}
+            onChange={(v) => update("quantity", v)}
+            placeholder="1"
           />
 
           <SelectField
             label="Repair / Work"
             value={form.work}
-            onChange={(v) =>
-              update("work", v)
-            }
+            onChange={(v) => update("work", v)}
             options={[
               "Full Leather Replacement",
               "Leather Repair",
-              "Repair & Stitching",
               "Fabric Replacement",
               "Re-Upholstery",
               "Foam Replacement",
+              "Repair & Stitching",
+              "Frame Repair",
+              "Polishing",
+              "Multiple Repairs",
+              "Other",
             ]}
           />
 
           <Field
+            label="Item description"
+            value={form.description}
+            onChange={(v) => update("description", v)}
+            placeholder="Describe the item or damage"
+          />
+        </div>
+
+        <div className="job-form-section-title">
+          <span>MATERIAL</span>
+          <p>Material used for the repair</p>
+        </div>
+
+        <div className="modal-grid">
+          <Field
             label="Material"
             value={form.material}
-            onChange={(v) =>
-              update("material", v)
-            }
+            onChange={(v) => update("material", v)}
             placeholder="Leather / Fabric / Foam"
           />
-
           <Field
-            label="Total amount"
+            label="Colour"
+            value={form.colour}
+            onChange={(v) => update("colour", v)}
+            placeholder="Black / Brown / Beige"
+          />
+          <Field
+            label="Material cost"
             type="number"
-            value={form.amount}
-            onChange={(v) =>
-              update("amount", v)
-            }
+            value={form.materialCost}
+            onChange={(v) => update("materialCost", v)}
             placeholder="₹ 0"
           />
+        </div>
 
+        <div className="job-form-section-title">
+          <span>CHARGES</span>
+          <p>Build the customer bill</p>
+        </div>
+
+        <div className="modal-grid">
+          <Field
+            label="Labour charge"
+            type="number"
+            value={form.labour}
+            onChange={(v) => update("labour", v)}
+            placeholder="₹ 0"
+          />
+          <Field
+            label="Other charges"
+            type="number"
+            value={form.otherCharges}
+            onChange={(v) => update("otherCharges", v)}
+            placeholder="₹ 0"
+          />
+          <Field
+            label="Discount"
+            type="number"
+            value={form.discount}
+            onChange={(v) => update("discount", v)}
+            placeholder="₹ 0"
+          />
+        </div>
+
+        <div className="job-form-summary">
+          <div><span>Material</span><strong>{money(materialCost)}</strong></div>
+          <div><span>Labour</span><strong>{money(labour)}</strong></div>
+          <div><span>Other</span><strong>{money(otherCharges)}</strong></div>
+          <div className="discount"><span>Discount</span><strong>-{money(discount)}</strong></div>
+          <div className="summary-total"><span>TOTAL</span><strong>{money(total)}</strong></div>
+        </div>
+
+        <div className="job-form-section-title">
+          <span>PAYMENT & DELIVERY</span>
+          <p>Record advance and expected delivery</p>
+        </div>
+
+        <div className="modal-grid">
           <Field
             label="Advance paid"
             type="number"
             value={form.paid}
-            onChange={(v) =>
-              update("paid", v)
-            }
+            onChange={(v) => update("paid", v)}
             placeholder="₹ 0"
           />
-
           <Field
             label="Expected delivery"
             type="date"
-            value=""
-            onChange={() => {}}
+            value={form.deliveryDate}
+            onChange={(v) => update("deliveryDate", v)}
+          />
+        </div>
+
+        <div className={`job-form-balance ${balance === 0 ? "clear" : ""}`}>
+          <span>BALANCE DUE</span>
+          <strong>{money(balance)}</strong>
+        </div>
+
+        <div className="job-form-notes">
+          <label>Job notes</label>
+          <textarea
+            rows={3}
+            value={form.notes}
+            onChange={(e) => update("notes", e.target.value)}
+            placeholder="Special instructions, damage details or customer requirements..."
           />
         </div>
 
         <div className="modal-footer">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={close}
-          >
+          <button type="button" className="secondary-button" onClick={close}>
             Cancel
           </button>
-
-          <button
-            type="submit"
-            className="primary-button"
-          >
-            <Plus size={16} />
+          <button type="submit" className="primary-button">
+            <Save size={16} />
             Create Repair Job
           </button>
         </div>
@@ -2397,7 +2891,7 @@ function SelectField({
    COMPLETE CSS
 ============================================================ */
 
-const CSS = `
+const BASE_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
 
 * {
@@ -4390,5 +4884,125 @@ button {
   }
 }
 `;
+
+
+/* ============================================================
+   AL KANZ MODERN JOBS UI OVERRIDES
+============================================================ */
+
+const AL_KANZ_JOB_UI = `
+.jobs-page-modern {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+.jobs-page-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:24px;
+  margin-bottom:28px;
+}
+.jobs-breadcrumb { display:flex; align-items:center; gap:7px; color:#87958f; font-size:13px; margin-bottom:14px; }
+.jobs-breadcrumb strong { color:#31413a; }
+.jobs-eyebrow { color:#75857e; font-size:11px; font-weight:800; letter-spacing:1.6px; margin-bottom:8px; }
+.jobs-page-header h1 { margin:0; font-size:34px; line-height:1.1; color:#13251d; letter-spacing:-.8px; }
+.jobs-page-header p { margin:8px 0 0; color:#7d8d86; font-size:15px; }
+.jobs-new-button { border:0; border-radius:11px; padding:13px 18px; background:#087653; color:#fff; font-size:14px; font-weight:800; display:flex; align-items:center; gap:8px; cursor:pointer; box-shadow:0 8px 22px rgba(8,118,83,.18); }
+.jobs-toolbar-modern { display:flex; gap:12px; margin-bottom:16px; }
+.jobs-search-modern { height:48px; width:370px; background:#fff; border:1px solid #dce7e2; border-radius:10px; display:flex; align-items:center; gap:10px; padding:0 14px; color:#82918a; }
+.jobs-search-modern input { border:0; outline:0; width:100%; background:transparent; font-size:14px; color:#17251f; }
+.jobs-search-modern button { border:0; background:transparent; color:#82918a; font-size:22px; cursor:pointer; }
+.jobs-status-filter { height:48px; border:1px solid #dce7e2; background:#fff; border-radius:10px; padding:0 14px; font-size:14px; color:#35463e; outline:none; }
+.jobs-modern-card { background:#fff; border:1px solid #dce7e2; border-radius:15px; overflow:hidden; box-shadow:0 5px 18px rgba(15,45,34,.035); }
+.jobs-modern-head,.jobs-modern-row { display:grid; grid-template-columns:1.05fr 1.35fr 1.75fr 1.05fr .8fr .8fr .45fr; align-items:center; }
+.jobs-modern-head { min-height:52px; padding:0 20px; background:#f8faf9; border-bottom:1px solid #e7eeeb; color:#84928c; font-size:11px; font-weight:800; letter-spacing:.8px; }
+.jobs-modern-row { min-height:92px; padding:0 20px; border-bottom:1px solid #edf2ef; }
+.jobs-modern-row:hover { background:#fbfdfc; }
+.jobs-id-cell,.jobs-customer-cell,.jobs-work-cell { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.jobs-id-cell strong,.jobs-customer-cell strong,.jobs-work-cell strong { color:#22342c; font-size:14px; }
+.jobs-id-cell small,.jobs-customer-cell small,.jobs-work-cell small { color:#8a9892; font-size:12px; }
+.jobs-money { font-size:14px; color:#1e2d26; }
+.jobs-balance { font-size:14px; color:#df4d4d; }
+.jobs-balance.paid { color:#087653; }
+.jobs-view-button { width:40px; height:40px; border:1px solid #dbe6e1; border-radius:9px; background:#fff; color:#53635c; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.jobs-view-button:hover { border-color:#087653; color:#087653; background:#f1faf6; }
+.jobs-modern-footer { padding:14px 20px; color:#899690; font-size:12px; }
+.job-drawer-overlay { position:fixed; inset:0; z-index:300; background:rgba(10,28,20,.25); }
+.job-drawer { position:fixed; z-index:301; right:0; top:0; width:min(560px,94vw); height:100vh; background:#fff; box-shadow:-18px 0 50px rgba(8,35,25,.16); display:flex; flex-direction:column; animation:akDrawer .22s ease-out; }
+@keyframes akDrawer { from{transform:translateX(100%)} to{transform:translateX(0)} }
+.job-drawer-header { padding:25px 28px; border-bottom:1px solid #e3ebe7; display:flex; justify-content:space-between; align-items:flex-start; }
+.job-drawer-header span { font-size:11px; font-weight:800; letter-spacing:1.4px; color:#83918b; }
+.job-drawer-header h2 { margin:7px 0 3px; font-size:27px; color:#087653; }
+.job-drawer-header p { margin:0; color:#8a9892; font-size:13px; }
+.job-drawer-close { width:40px; height:40px; border:1px solid #dce6e2; background:#fff; border-radius:9px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#596860; }
+.job-drawer-body { overflow:auto; padding:20px 24px 35px; }
+.job-detail-grid { display:grid; grid-template-columns:1fr 1fr; border:1px solid #dfe8e4; border-radius:12px; overflow:hidden; margin-bottom:13px; }
+.job-detail-box { padding:18px; min-height:140px; }
+.job-detail-box:first-child { border-right:1px solid #dfe8e4; }
+.job-detail-label { display:flex; align-items:center; gap:8px; color:#087653; font-size:11px; font-weight:800; letter-spacing:.7px; }
+.job-detail-box strong { display:block; margin-top:13px; color:#172720; font-size:16px; }
+.job-detail-box p { margin:8px 0 0; color:#62716a; font-size:13px; display:flex; align-items:center; gap:6px; line-height:1.5; }
+.job-detail-box small { display:block; margin-top:8px; color:#8a9892; font-size:12px; }
+.job-detail-section { border:1px solid #dfe8e4; border-radius:12px; padding:18px; margin-bottom:13px; }
+.job-section-title { display:flex; align-items:center; gap:8px; color:#087653; font-size:11px; font-weight:800; letter-spacing:.8px; margin-bottom:15px; }
+.job-money-row { display:flex; justify-content:space-between; padding:7px 0; font-size:14px; }
+.job-money-row span { color:#687770; }
+.job-money-row strong { color:#25342d; }
+.job-money-row.discount strong { color:#df4d4d; }
+.job-total-row { margin-top:9px; padding-top:15px; border-top:1px dashed #cbd7d1; display:flex; justify-content:space-between; align-items:center; }
+.job-total-row span { font-size:12px; font-weight:800; color:#26362e; }
+.job-total-row strong { font-size:23px; color:#087653; }
+.job-paid { color:#087653 !important; }
+.job-balance-row { margin-top:8px; padding-top:14px; border-top:1px solid #edf1ef; display:flex; justify-content:space-between; align-items:center; }
+.job-balance-row span { font-size:12px; font-weight:800; color:#26362e; }
+.job-balance-row strong { font-size:22px; color:#df4d4d; }
+.job-payment-button { width:100%; margin-top:14px; height:46px; border:0; border-radius:9px; background:#087653; color:#fff; font-size:13px; font-weight:800; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; }
+.job-payment-button:disabled { background:#b7c6c0; cursor:not-allowed; }
+.job-payment-form { margin-top:14px; padding:14px; background:#f7faf8; border-radius:10px; }
+.job-payment-form label { font-size:12px; font-weight:700; color:#43534c; }
+.job-payment-input { margin-top:7px; height:46px; background:#fff; border:1px solid #d7e2dd; border-radius:9px; display:flex; align-items:center; padding:0 12px; gap:7px; }
+.job-payment-input span { color:#74837c; font-size:16px; }
+.job-payment-input input { border:0; outline:0; width:100%; font-size:15px; }
+.job-payment-actions { display:flex; gap:8px; margin-top:10px; }
+.job-payment-actions button { flex:1; height:40px; border-radius:8px; border:1px solid #d8e3de; background:#fff; cursor:pointer; font-weight:700; }
+.job-payment-actions button:last-child { border:0; background:#087653; color:#fff; }
+.job-status-timeline { display:grid; grid-template-columns:repeat(5,1fr); margin:22px 0 18px; }
+.job-status-step { position:relative; text-align:center; color:#9aa7a1; font-size:10px; }
+.job-status-step:not(:last-child):after { content:""; position:absolute; left:58%; right:-42%; top:7px; height:2px; background:#dfe6e3; }
+.job-status-step.active:not(:last-child):after { background:#087653; }
+.job-status-dot { position:relative; z-index:2; width:16px; height:16px; margin:0 auto 7px; border-radius:50%; border:2px solid #cbd7d1; background:#fff; display:flex; align-items:center; justify-content:center; color:#fff; }
+.job-status-step.active .job-status-dot { border-color:#087653; background:#087653; }
+.job-status-step.current .job-status-dot { box-shadow:0 0 0 5px #dff3e9; }
+.job-status-step.active span { color:#33443c; font-weight:700; }
+.job-status-label { display:block; font-size:12px; font-weight:700; color:#3d4d46; }
+.job-status-label select { width:100%; height:44px; margin-top:7px; border:1px solid #d9e4df; border-radius:9px; background:#fff; padding:0 12px; font-size:13px; outline:none; }
+.job-action-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.job-action-grid button { height:46px; border:1px solid #cddbd5; background:#fff; border-radius:9px; color:#087653; font-size:12px; font-weight:800; display:flex; align-items:center; justify-content:center; gap:7px; cursor:pointer; }
+.job-notes { margin:0; color:#5d6d65; font-size:13px; line-height:1.65; }
+.job-form-section-title { padding:18px 26px 0; }
+.job-form-section-title span { font-size:11px; letter-spacing:1px; font-weight:800; color:#087653; }
+.job-form-section-title p { margin:5px 0 0; color:#87958f; font-size:12px; }
+.job-form-summary { margin:5px 26px 0; padding:17px; background:#f5f8f6; border:1px solid #dfe8e4; border-radius:11px; }
+.job-form-summary>div { display:flex; justify-content:space-between; padding:6px 0; font-size:13px; }
+.job-form-summary span { color:#697870; }
+.job-form-summary strong { color:#26362f; }
+.job-form-summary .discount strong { color:#df4d4d; }
+.job-form-summary .summary-total { margin-top:8px; padding-top:14px; border-top:1px dashed #cbd7d1; }
+.job-form-summary .summary-total span { color:#25352d; font-weight:800; }
+.job-form-summary .summary-total strong { color:#087653; font-size:22px; }
+.job-form-balance { margin:13px 26px 0; padding:14px 16px; border-radius:10px; background:#fff3df; display:flex; justify-content:space-between; align-items:center; }
+.job-form-balance span { color:#9b6816; font-size:11px; font-weight:800; }
+.job-form-balance strong { color:#9b6816; font-size:18px; }
+.job-form-balance.clear { background:#e7f6ef; }
+.job-form-balance.clear span,.job-form-balance.clear strong { color:#087653; }
+.job-form-notes { padding:18px 26px 0; }
+.job-form-notes label { display:block; color:#45564e; font-size:12px; font-weight:700; margin-bottom:7px; }
+.job-form-notes textarea { width:100%; resize:vertical; border:1px solid #d9e4df; border-radius:9px; padding:11px 12px; outline:none; font:inherit; font-size:13px; color:#1b2b24; background:#fbfcfc; }
+@media(max-width:900px){ .jobs-modern-head,.jobs-modern-row{grid-template-columns:1fr 1.2fr 1.5fr .9fr .8fr .8fr .5fr; min-width:900px;} .jobs-modern-card{overflow-x:auto;} }
+@media(max-width:650px){ .jobs-page-header{align-items:flex-start; flex-direction:column;} .jobs-toolbar-modern{flex-direction:column;} .jobs-search-modern{width:100%;} .job-drawer{width:100%;} .job-detail-grid{grid-template-columns:1fr;} .job-detail-box:first-child{border-right:0;border-bottom:1px solid #dfe8e4;} }
+`;
+
+const CSS = BASE_CSS + AL_KANZ_JOB_UI;
 
 export default App;
