@@ -1,4 +1,204 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { databases, ID, Query } from "./lib/appwrite";
+
+// Appwrite compatibility layer for the existing Al Kanz UI.
+// It keeps the existing CRUD code readable while removing Supabase.
+const hasSupabase = true;
+
+// ---------------------------------------------------------------------------
+// Appwrite compatibility layer
+// ---------------------------------------------------------------------------
+// The original UI was written around Supabase's `from(...).select()/insert()`
+// API.  To avoid forcing you to create 10+ Appwrite schemas immediately, this
+// adapter stores each logical table as a row in one physical Appwrite table:
+//   database: al-kanz-db
+//   table:    app_state
+//   columns:  table_name, payload
+// The rest of the UI can keep using the existing Supabase-style calls.
+
+const STATE_DATABASE_ID = "al-kanz-db";
+const STATE_TABLE_ID = "app_state";
+
+const mapAppwriteRow = (row) => ({
+  ...row,
+  id: row.id || row.$id,
+  created_at: row.created_at || row.$createdAt,
+  updated_at: row.updated_at || row.$updatedAt,
+});
+
+const normalizeData = (table, data) => {
+  const value = { ...data };
+  if (table === "audit_logs" && value.details && typeof value.details !== "string") {
+    value.details = JSON.stringify(value.details);
+  }
+  if (table === "expenses") {
+    delete value.account;
+    delete value.reference;
+  }
+  if (table === "money_transfers") delete value.reference;
+  if (table === "transactions") {
+    delete value.expense_id;
+    delete value.transfer_id;
+  }
+  return value;
+};
+
+const getNestedValue = (row, field) => {
+  if (field === "id") return row.id || row.$id;
+  if (field === "created_at") return row.created_at || row.$createdAt;
+  if (field === "updated_at") return row.updated_at || row.$updatedAt;
+  return row[field];
+};
+
+function createAppwriteQuery(table) {
+  let operation = "select";
+  let payload = {};
+  const filters = [];
+  let orderBy = null;
+  let limitCount = null;
+  let single = false;
+  let maybeSingle = false;
+
+  const builder = {
+    select() { return builder; },
+    eq(field, value) {
+      filters.push({ type: "eq", field, value });
+      return builder;
+    },
+    ilike(field, value) {
+      filters.push({ type: "ilike", field, value });
+      return builder;
+    },
+    order(field, { ascending = true } = {}) {
+      orderBy = { field, ascending };
+      return builder;
+    },
+    limit(n) {
+      limitCount = Number(n);
+      return builder;
+    },
+    single() { single = true; return builder; },
+    maybeSingle() { maybeSingle = true; return builder; },
+    insert(data) {
+      operation = "insert";
+      payload = Array.isArray(data) ? data[0] : data;
+      return builder;
+    },
+    update(data) {
+      operation = "update";
+      payload = data;
+      return builder;
+    },
+    async execute() {
+      try {
+        const result = await databases.listRows({
+          databaseId: STATE_DATABASE_ID,
+          tableId: STATE_TABLE_ID,
+          queries: [],
+          total: false,
+        });
+
+        let stateRows = (result.rows || []).filter((r) => r.table_name === table);
+        let rows = stateRows.map((r) => {
+          let data = {};
+          try { data = r.payload ? JSON.parse(r.payload) : {}; } catch { data = {}; }
+          return mapAppwriteRow({
+            ...data,
+            $id: r.$id,
+            $createdAt: r.$createdAt,
+            $updatedAt: r.$updatedAt,
+          });
+        });
+
+        for (const filter of filters) {
+          rows = rows.filter((row) => {
+            const actual = getNestedValue(row, filter.field);
+            if (filter.type === "eq") {
+              return String(actual ?? "") === String(filter.value ?? "");
+            }
+            return String(actual ?? "").toLowerCase().includes(
+              String(filter.value ?? "").replace(/^%|%$/g, "").toLowerCase()
+            );
+          });
+        }
+
+        if (orderBy) {
+          const { field, ascending } = orderBy;
+          rows.sort((a, b) => {
+            const av = getNestedValue(a, field);
+            const bv = getNestedValue(b, field);
+            const ad = new Date(av).getTime();
+            const bd = new Date(bv).getTime();
+            const comparableA = Number.isNaN(ad) ? String(av ?? "") : ad;
+            const comparableB = Number.isNaN(bd) ? String(bv ?? "") : bd;
+            if (comparableA < comparableB) return ascending ? -1 : 1;
+            if (comparableA > comparableB) return ascending ? 1 : -1;
+            return 0;
+          });
+        }
+
+        if (limitCount != null) rows = rows.slice(0, limitCount);
+
+        if (operation === "select") {
+          if (single) {
+            if (!rows[0]) return { data: null, error: { message: `No ${table} row found` } };
+            return { data: rows[0], error: null };
+          }
+          if (maybeSingle) return { data: rows[0] || null, error: null };
+          return { data: rows, error: null };
+        }
+
+        if (operation === "insert") {
+          const clean = normalizeData(table, payload);
+          const row = await databases.createRow({
+            databaseId: STATE_DATABASE_ID,
+            tableId: STATE_TABLE_ID,
+            rowId: ID.unique(),
+            data: {
+              table_name: table,
+              payload: JSON.stringify(clean),
+            },
+          });
+          return {
+            data: mapAppwriteRow({ ...clean, $id: row.$id, $createdAt: row.$createdAt, $updatedAt: row.$updatedAt }),
+            error: null,
+          };
+        }
+
+        if (operation === "update") {
+          if (!rows[0]) return { data: null, error: { message: `No ${table} row matched update` } };
+          const physical = await databases.getRow({
+            databaseId: STATE_DATABASE_ID,
+            tableId: STATE_TABLE_ID,
+            rowId: rows[0].id,
+          });
+          let existing = {};
+          try { existing = physical.payload ? JSON.parse(physical.payload) : {}; } catch { existing = {}; }
+          const merged = normalizeData(table, { ...existing, ...payload });
+          const row = await databases.updateRow({
+            databaseId: STATE_DATABASE_ID,
+            tableId: STATE_TABLE_ID,
+            rowId: rows[0].id,
+            data: { table_name: table, payload: JSON.stringify(merged) },
+          });
+          return {
+            data: mapAppwriteRow({ ...merged, $id: row.$id, $createdAt: row.$createdAt, $updatedAt: row.$updatedAt }),
+            error: null,
+          };
+        }
+      } catch (error) {
+        console.error(`Appwrite ${operation} ${table} failed:`, error);
+        return { data: null, error };
+      }
+    },
+    then(resolve, reject) { return builder.execute().then(resolve, reject); },
+  };
+
+  return builder;
+}
+
+const supabase = { from: createAppwriteQuery };
+
 import {
   LayoutDashboard,
   Wrench,
@@ -45,7 +245,9 @@ import {
   Lock,
   UserCog,
   Layers3,
-  IndianRupee,
+  Database,
+  ReceiptText,
+  Printer,
 } from "lucide-react";
 
 /* ============================================================
@@ -57,7 +259,7 @@ const INITIAL_JOBS = [
   {
     id: "AK-1048",
     customer: "Ahmed Rahman",
-    phone: "+91 98765 43210",
+    phone: "+971 50 123 4567",
     item: "3-Seater Sofa",
     work: "Full Leather Replacement",
     material: "Premium Leather",
@@ -70,7 +272,7 @@ const INITIAL_JOBS = [
   {
     id: "AK-1047",
     customer: "Nabeel Ahmed",
-    phone: "+91 98470 12345",
+    phone: "+971 52 234 5678",
     item: "Leather Recliner",
     work: "Repair & Stitching",
     material: "Brown Leather",
@@ -83,7 +285,7 @@ const INITIAL_JOBS = [
   {
     id: "AK-1046",
     customer: "Sameer Khan",
-    phone: "+91 99887 66554",
+    phone: "+971 55 345 6789",
     item: "Office Sofa Set",
     work: "Fabric Replacement",
     material: "Velvet Fabric",
@@ -96,7 +298,7 @@ const INITIAL_JOBS = [
   {
     id: "AK-1045",
     customer: "Faris Traders",
-    phone: "+91 98989 11223",
+    phone: "+971 4 345 6789",
     item: "6 Dining Chairs",
     work: "Seat Upholstery",
     material: "Synthetic Leather",
@@ -112,32 +314,32 @@ const INITIAL_CUSTOMERS = [
   {
     id: 1,
     name: "Ahmed Rahman",
-    phone: "+91 98765 43210",
-    location: "Mangalore",
+    phone: "+971 50 123 4567",
+    location: "Dubai",
     jobs: 3,
     outstanding: 16000,
   },
   {
     id: 2,
     name: "Nabeel Ahmed",
-    phone: "+91 98470 12345",
-    location: "Mangalore",
+    phone: "+971 52 234 5678",
+    location: "Dubai",
     jobs: 2,
     outstanding: 7000,
   },
   {
     id: 3,
     name: "Sameer Khan",
-    phone: "+91 99887 66554",
-    location: "Bangalore",
+    phone: "+971 55 345 6789",
+    location: "Sharjah",
     jobs: 4,
     outstanding: 8500,
   },
   {
     id: 4,
     name: "Faris Traders",
-    phone: "+91 98989 11223",
-    location: "Mangalore",
+    phone: "+971 4 345 6789",
+    location: "Dubai",
     jobs: 6,
     outstanding: 0,
   },
@@ -182,21 +384,21 @@ const INITIAL_SUPPLIERS = [
   {
     id: 1,
     name: "Leather World",
-    phone: "+91 98111 22233",
+    phone: "+971 4 321 1122",
     material: "Leather",
     balance: 18500,
   },
   {
     id: 2,
     name: "Modern Fabrics",
-    phone: "+91 98222 33344",
+    phone: "+971 4 322 2233",
     material: "Fabric",
     balance: 7200,
   },
   {
     id: 3,
     name: "Foam House",
-    phone: "+91 98333 44455",
+    phone: "+971 4 323 3344",
     material: "Foam",
     balance: 4500,
   },
@@ -207,21 +409,21 @@ const INITIAL_STAFF = [
     id: 1,
     name: "Mohammed Afsal",
     role: "Master Upholsterer",
-    phone: "+91 98700 11122",
+    phone: "+971 50 456 7890",
     status: "Active",
   },
   {
     id: 2,
     name: "Shameer",
     role: "Leather Technician",
-    phone: "+91 98700 22233",
+    phone: "+971 52 567 8901",
     status: "Active",
   },
   {
     id: 3,
     name: "Riyas",
     role: "Stitching Specialist",
-    phone: "+91 98700 33344",
+    phone: "+971 55 678 9012",
     status: "On Leave",
   },
 ];
@@ -268,7 +470,7 @@ const NAVIGATION = [
       {
         name: "Billing",
         icon: Receipt,
-        children: ["Main", "Invoices", "Payments"],
+        children: ["Main", "Transactions", "Invoices", "Payments"],
       },
     ],
   },
@@ -299,35 +501,195 @@ const NAVIGATION = [
 ];
 
 const money = (value) =>
-  new Intl.NumberFormat("en-IN", {
+  new Intl.NumberFormat("en-AE", {
     style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
+    currency: "AED",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+
+const LOCAL_KEY = "al-kanz-uae-data-v2";
+
+const safeParse = (value, fallback) => {
+  try { return value ? JSON.parse(value) : fallback; }
+  catch { return fallback; }
+};
+
+const loadLocalData = () => {
+  const raw = safeParse(localStorage.getItem(LOCAL_KEY), null);
+  return raw || {
+    jobs: INITIAL_JOBS,
+    customers: INITIAL_CUSTOMERS,
+    materials: INITIAL_MATERIALS,
+    suppliers: INITIAL_SUPPLIERS,
+    staff: INITIAL_STAFF,
+    payments: [],
+    expenses: [],
+    transfers: [],
+    transactions: [],
+  };
+};
+
+const auditLocal = (action, entity, id, details = {}) => {
+  const data = loadLocalData();
+  const logs = data.auditLogs || [];
+  logs.unshift({
+    id: Date.now().toString(),
+    action,
+    entity,
+    entityId: id,
+    details,
+    createdAt: new Date().toISOString(),
+  });
+  localStorage.setItem(LOCAL_KEY, JSON.stringify({ ...data, auditLogs: logs.slice(0, 500) }));
+};
+
+const mapJob = (row) => ({
+  id: row.job_number,
+  customer: row.customer_name,
+  phone: row.phone || "",
+  item: row.item,
+  description: row.description || "",
+  work: row.work || "",
+  material: row.material || "",
+  colour: row.colour || "",
+  quantity: Number(row.quantity || 1),
+  materialCost: Number(row.material_cost || 0),
+  labour: Number(row.labour || 0),
+  otherCharges: Number(row.other_charges || 0),
+  discount: Number(row.discount || 0),
+  amount: Number(row.amount || 0),
+  paid: Number(row.paid || 0),
+  balance: Math.max(0, Number(row.amount || 0) - Number(row.paid || 0)),
+  status: row.status || "Received",
+  progress: Number(row.progress || 0),
+  deliveryDate: row.delivery_date || "",
+  notes: row.notes || "",
+  date: row.created_at ? new Date(row.created_at).toLocaleDateString("en-AE", { day:"2-digit", month:"short", year:"numeric", timeZone:"Asia/Dubai" }) : "",
+  dbId: row.id,
+});
+
+const mapCustomer = (row) => ({
+  id: row.id,
+  name: row.name,
+  phone: row.phone || "",
+  location: row.location || "Dubai",
+  address: row.address || "",
+  jobs: Number(row.jobs_count || 0),
+  outstanding: Number(row.outstanding || 0),
+});
+
+const mapMaterial = (row) => ({
+  id: row.id,
+  name: row.name,
+  category: row.category,
+  unit: row.unit,
+  stock: Number(row.stock || 0),
+  price: Number(row.price || 0),
+});
+
+const mapSupplier = (row) => ({
+  id: row.id, name: row.name, phone: row.phone || "", material: row.material || "", balance: Number(row.balance || 0)
+});
+
+const mapStaff = (row) => ({
+  id: row.id, name: row.name, role: row.role || "", phone: row.phone || "", status: row.status || "Active"
+});
 
 function App() {
   const [page, setPage] = useState("Dashboard");
-  const [jobs, setJobs] = useState(INITIAL_JOBS);
-  const [customers, setCustomers] = useState(INITIAL_CUSTOMERS);
-  const [materials, setMaterials] = useState(INITIAL_MATERIALS);
-  const [suppliers] = useState(INITIAL_SUPPLIERS);
-  const [staff] = useState(INITIAL_STAFF);
+  const [jobs, setJobs] = useState(() => loadLocalData().jobs || INITIAL_JOBS);
+  const [customers, setCustomers] = useState(() => loadLocalData().customers || INITIAL_CUSTOMERS);
+  const [materials, setMaterials] = useState(() => loadLocalData().materials || INITIAL_MATERIALS);
+  const [suppliers, setSuppliers] = useState(() => loadLocalData().suppliers || INITIAL_SUPPLIERS);
+  const [staff, setStaff] = useState(() => loadLocalData().staff || INITIAL_STAFF);
+  const [payments, setPayments] = useState(() => loadLocalData().payments || []);
+  const [expenses, setExpenses] = useState(() => loadLocalData().expenses || []);
+  const [transfers, setTransfers] = useState(() => loadLocalData().transfers || []);
+  const [transactions, setTransactions] = useState(() => loadLocalData().transactions || []);
+  const [auditLogs, setAuditLogs] = useState(() => loadLocalData().auditLogs || []);
+  const [loadingData, setLoadingData] = useState(false);
+  const [dbReady, setDbReady] = useState(hasSupabase);
 
-  const [open, setOpen] = useState({
-    "Jobs & Repairs": true,
-    Billing: true,
-    Accounts: true,
-    Settings: true,
-  });
+  const [open, setOpen] = useState("Jobs & Repairs");
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("al-kanz-theme") || "default");
   const [modal, setModal] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
   const [search, setSearch] = useState("");
 
-  const totalSales = jobs.reduce((a, b) => a + b.amount, 0);
-  const totalPaid = jobs.reduce((a, b) => a + b.paid, 0);
-  const outstanding = totalSales - totalPaid;
+  useEffect(() => {
+    const local = loadLocalData();
+    if (!hasSupabase) return;
+
+    const loadRemote = async () => {
+      setLoadingData(true);
+      try {
+        const [j, c, m, s, st, p, e, tr, tx, al] = await Promise.all([
+          supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+          supabase.from("customers").select("*").order("created_at", { ascending: false }),
+          supabase.from("materials").select("*").order("created_at", { ascending: false }),
+          supabase.from("suppliers").select("*").order("created_at", { ascending: false }),
+          supabase.from("staff").select("*").order("created_at", { ascending: false }),
+          supabase.from("payments").select("*").order("paid_at", { ascending: false }),
+          supabase.from("expenses").select("*").order("expense_date", { ascending: false }),
+          supabase.from("money_transfers").select("*").order("transfer_date", { ascending: false }),
+          supabase.from("transactions").select("*").order("transaction_date", { ascending: false }),
+          supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(500),
+        ]);
+        const err = [j,c,m,s,st,p,e,tr,tx,al].find(x => x.error);
+        if (err?.error) throw err.error;
+
+        setJobs((j.data || []).map(mapJob));
+        setCustomers((c.data || []).map(mapCustomer));
+        setMaterials((m.data || []).map(mapMaterial));
+        setSuppliers((s.data || []).map(mapSupplier));
+        setStaff((st.data || []).map(mapStaff));
+        setPayments(p.data || []);
+        setExpenses(e.data || []);
+        setTransfers(tr.data || []);
+        setTransactions(tx.data || []);
+        setAuditLogs(al.data || []);
+        setDbReady(true);
+      } catch (error) {
+        console.error("Al Kanz database load failed:", error);
+        setDbReady(false);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    loadRemote();
+  }, []);
+
+  useEffect(() => {
+    const data = { jobs, customers, materials, suppliers, staff, payments, expenses, transfers, transactions, auditLogs };
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+  }, [jobs, customers, materials, suppliers, staff, payments, expenses, transfers, transactions, auditLogs]);
+
+  useEffect(() => {
+    localStorage.setItem("al-kanz-theme", theme);
+  }, [theme]);
+
+  const totalSales = jobs.reduce(
+  (a, b) => a + Number(b.amount || 0),
+  0
+);
+
+const totalPaid = jobs.reduce(
+  (a, b) => a + Number(b.paid || 0),
+  0
+);
+
+const outstanding = totalSales - totalPaid;
+
+const totalExpenses = expenses.reduce(
+  (a, b) => a + Number(b.amount || 0),
+  0
+);
+
+const netCash = totalPaid - totalExpenses;
 
   const activeJobs = jobs.filter(
     (j) => j.status === "In Progress"
@@ -338,79 +700,131 @@ function App() {
   ).length;
 
   const navigate = (name) => {
-    setPage(name);
-    setSidebarOpen(false);
+  setPage(name);
+  setSidebarOpen(false);
 
-    if (name === "New Repair Job") {
-      setModal("job");
+  // Keep the parent section open when selecting its child
+  const parentSection = NAVIGATION
+    .flatMap(group => group.items)
+    .find(item => item.children?.includes(name));
+
+  if (parentSection) {
+    setOpen(parentSection.name);
+  } else {
+    // Opening a main section closes the other sections
+    const hasChildren = NAVIGATION
+      .flatMap(group => group.items)
+      .find(item => item.name === name)?.children?.length;
+
+    if (hasChildren) {
+      setOpen(name);
     }
-  };
+  }
 
-  const addJob = (job) => {
-    setJobs((prev) => [
-      {
-        ...job,
-        id: `AK-${1050 + prev.length}`,
-        date: new Date().toLocaleDateString("en-IN", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
-        progress: 0,
-        status: "In Progress",
-      },
-      ...prev,
-    ]);
+  if (name === "New Repair Job") {
+    setModal("job");
+  }
+};
 
+  const addJob = async (job) => {
+    const id = `AK-${1050 + jobs.length}`;
+    const newJob = {
+      ...job,
+      id,
+      date: new Date().toLocaleDateString("en-AE", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Dubai" }),
+      progress: 5,
+      status: "Received",
+      paid: Number(job.paid || 0),
+      amount: Number(job.amount || 0),
+    };
+
+    setJobs(prev => [newJob, ...prev]);
     setModal(null);
     setPage("Active Jobs");
+
+    if (hasSupabase) {
+      try {
+        let customerId = null;
+        const existing = await supabase.from("customers").select("id").eq("phone", job.phone).limit(1).maybeSingle();
+        if (existing.data?.id) customerId = existing.data.id;
+        else {
+          const created = await supabase.from("customers").insert({ name: job.customer, phone: job.phone, location: "Dubai", jobs_count: 0 }).select("id").single();
+          if (created.error) throw created.error;
+          customerId = created.data.id;
+        }
+        const row = {
+          job_number: id, customer_id: customerId, customer_name: job.customer, phone: job.phone,
+          item: job.item, description: job.description || "", work: job.work, material: job.material || "",
+          colour: job.colour || "", quantity: Number(job.quantity || 1), material_cost: Number(job.materialCost || 0),
+          labour: Number(job.labour || 0), other_charges: Number(job.otherCharges || 0), discount: Number(job.discount || 0),
+          amount: Number(job.amount || 0), paid: Number(job.paid || 0), status: "Received", progress: 5,
+          delivery_date: job.deliveryDate || null, notes: job.notes || "",
+        };
+        const saved = await supabase.from("jobs").insert(row).select("*").single();
+        if (saved.error) throw saved.error;
+        if (Number(job.paid || 0) > 0) {
+          const pay = await supabase.from("payments").insert({ job_id: saved.data.id, customer_id: customerId, amount: Number(job.paid), payment_method: "Cash", notes: "Advance payment" }).select("*").single();
+          if (pay.error) throw pay.error;
+          await supabase.from("transactions").insert({ transaction_type: "Income", description: `Advance · ${job.customer} · ${id}`, amount: Number(job.paid), account: "Cash", job_id: saved.data.id, customer_id: customerId, payment_id: pay.data.id });
+        }
+        await supabase.from("audit_logs").insert({ action: "Created repair job", entity_type: "job", entity_id: saved.data.id, details: { job_number: id } });
+      } catch (error) {
+        console.error("Job save failed:", error);
+        alert("Job saved locally, but cloud sync failed. Check Appwrite settings.");
+      }
+    }
+    auditLocal("Created repair job", "job", id, { customer: job.customer });
   };
 
-  const updateJobStatus = (jobId, status) => {
-    setJobs((prev) =>
-      prev.map((job) =>
-        job.id === jobId ? { ...job, status } : job
-      )
-    );
-
-    setSelectedJob((prev) =>
-      prev && prev.id === jobId
-        ? { ...prev, status }
-        : prev
-    );
+  const updateJobStatus = async (jobId, status) => {
+    setJobs(prev => prev.map(job => job.id === jobId ? { ...job, status } : job));
+    if (hasSupabase) {
+      const { error } = await supabase.from("jobs").update({ status, updated_at: new Date().toISOString() }).eq("job_number", jobId);
+      if (error) console.error("Status update failed:", error);
+    }
+    auditLocal("Updated job status", "job", jobId, { status });
   };
 
-  const recordPayment = (jobId, payment) => {
+  const recordPayment = async (jobId, payment) => {
     const amount = Number(payment);
     if (!amount || amount <= 0) return;
-
-    setJobs((prev) =>
-      prev.map((job) => {
-        if (job.id !== jobId) return job;
-        const paid = Math.min(job.amount, (job.paid || 0) + amount);
-        return { ...job, paid };
-      })
-    );
-
-    setSelectedJob((prev) => {
-      if (!prev || prev.id !== jobId) return prev;
-      const paid = Math.min(prev.amount, (prev.paid || 0) + amount);
-      return { ...prev, paid };
-    });
+    const current = jobs.find(j => j.id === jobId);
+    if (!current) return;
+    const balance = Math.max(0, Number(current.amount || 0) - Number(current.paid || 0));
+    if (amount > balance) { alert("Payment cannot be greater than the balance."); return; }
+    const paid = Number(current.paid || 0) + amount;
+    setJobs(prev => prev.map(job => job.id === jobId ? { ...job, paid } : job));
+    setSelectedJob(prev => prev && prev.id === jobId ? { ...prev, paid } : prev);
+    const paymentRow = { id: Date.now().toString(), job_id: jobId, customer: current.customer, amount, payment_method: "Cash", paid_at: new Date().toISOString() };
+    setPayments(prev => [paymentRow, ...prev]);
+    setTransactions(prev => [{ id: Date.now().toString(), transaction_type: "Income", description: `Payment · ${current.customer} · ${jobId}`, amount, account: "Cash", transaction_date: new Date().toISOString() }, ...prev]);
+    if (hasSupabase) {
+      try {
+        const jobDb = await supabase.from("jobs").select("id,customer_id").eq("job_number", jobId).single();
+        if (jobDb.error) throw jobDb.error;
+        const pay = await supabase.from("payments").insert({ job_id: jobDb.data.id, customer_id: jobDb.data.customer_id, amount, payment_method: "Cash" }).select("*").single();
+        if (pay.error) throw pay.error;
+        const upd = await supabase.from("jobs").update({ paid, updated_at: new Date().toISOString() }).eq("id", jobDb.data.id);
+        if (upd.error) throw upd.error;
+        await supabase.from("transactions").insert({ transaction_type: "Income", description: `Payment · ${current.customer} · ${jobId}`, amount, account: "Cash", job_id: jobDb.data.id, customer_id: jobDb.data.customer_id, payment_id: pay.data.id });
+        await supabase.from("audit_logs").insert({ action: "Recorded payment", entity_type: "job", entity_id: jobDb.data.id, details: { job_number: jobId, amount } });
+      } catch (error) {
+        console.error("Payment sync failed:", error);
+        alert("Payment saved locally, but cloud sync failed.");
+      }
+    }
+    auditLocal("Recorded payment", "job", jobId, { amount });
   };
 
-  const addCustomer = (customer) => {
-    setCustomers((prev) => [
-      ...prev,
-      {
-        ...customer,
-        id: Date.now(),
-        jobs: 0,
-        outstanding: 0,
-      },
-    ]);
-
+  const addCustomer = async (customer) => {
+    const newCustomer = { ...customer, id: Date.now(), jobs: 0, outstanding: 0 };
+    setCustomers(prev => [newCustomer, ...prev]);
     setModal(null);
+    if (hasSupabase) {
+      const { error } = await supabase.from("customers").insert({ name: customer.name, phone: customer.phone, location: customer.location || "Dubai", jobs_count: 0, outstanding: 0 });
+      if (error) { console.error("Customer save failed:", error); alert("Customer saved locally, but cloud sync failed."); }
+    }
+    auditLocal("Created customer", "customer", newCustomer.id, { name: customer.name });
   };
 
   const filteredJobs = useMemo(() => {
@@ -431,7 +845,7 @@ function App() {
     <>
       <style>{CSS}</style>
 
-      <div className="app">
+      <div className={`app theme-${theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} data-theme={theme}>
         {/* =====================================================
             SIDEBAR
         ===================================================== */}
@@ -489,11 +903,9 @@ function App() {
                         }`}
                         onClick={() => {
                           if (hasChildren) {
-                            setOpen((prev) => ({
-                              ...prev,
-                              [item.name]:
-                                !prev[item.name],
-                            }));
+                            setOpen((prev) =>
+                              prev === item.name ? null : item.name
+                            );
                           } else {
                             navigate(item.name);
                           }
@@ -506,7 +918,7 @@ function App() {
                           <ChevronDown
                             size={14}
                             className={
-                              open[item.name]
+                              open === item.name
                                 ? "chevron-open"
                                 : ""
                             }
@@ -515,7 +927,7 @@ function App() {
                       </button>
 
                       {hasChildren &&
-                        open[item.name] && (
+                        open === item.name && (
                           <div className="sub-menu">
                             {item.children.map(
                               (child) => (
@@ -565,6 +977,10 @@ function App() {
           </div>
         </aside>
 
+        {sidebarOpen && (
+          <button className="sidebar-overlay" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />
+        )}
+
         {/* =====================================================
             MAIN
         ===================================================== */}
@@ -574,15 +990,17 @@ function App() {
             <div className="topbar-left">
               <button
                 className="mobile-menu"
-                onClick={() =>
-                  setSidebarOpen(true)
-                }
+                aria-label="Toggle sidebar"
+                onClick={() => {
+                  if (window.innerWidth <= 850) setSidebarOpen(true);
+                  else setSidebarCollapsed(prev => !prev);
+                }}
               >
                 <Menu size={21} />
               </button>
 
               <div className="breadcrumb">
-                <span>Al Kanz</span>
+                <span>Al Kanz · Dubai</span>
                 <ChevronRight size={13} />
                 <strong>{page}</strong>
               </div>
@@ -620,6 +1038,7 @@ function App() {
           <div className="content">
             {page === "Dashboard" && (
               <Dashboard
+                totalSales={totalSales}
                 activeJobs={activeJobs}
                 readyJobs={readyJobs}
                 outstanding={outstanding}
@@ -698,7 +1117,7 @@ function App() {
             {(page === "Settings" ||
               page === "User" ||
               page === "Audit & Security") && (
-              <SettingsPage page={page} />
+              <SettingsPage page={page} theme={theme} setTheme={setTheme} />
             )}
           </div>
         </main>
@@ -734,13 +1153,14 @@ function App() {
           <MaterialModal
             close={() => setModal(null)}
             save={(material) => {
-              setMaterials((prev) => [
-                ...prev,
-                {
-                  ...material,
-                  id: Date.now(),
-                },
-              ]);
+              const newMaterial = { ...material, id: Date.now() };
+              setMaterials((prev) => [newMaterial, ...prev]);
+              if (hasSupabase) {
+                supabase.from("materials").insert({ name: material.name, category: material.category, unit: material.unit, stock: material.stock, price: material.price }).then(({ error }) => {
+                  if (error) { console.error(error); alert("Material saved locally, but cloud sync failed."); }
+                });
+              }
+              auditLocal("Created material", "material", newMaterial.id, { name: material.name });
               setModal(null);
             }}
           />
@@ -755,6 +1175,7 @@ function App() {
 ============================================================ */
 
 function Dashboard({
+  totalSales,
   activeJobs,
   readyJobs,
   outstanding,
@@ -768,7 +1189,7 @@ function Dashboard({
       <div className="page-heading">
         <div>
           <span className="eyebrow">
-            FRIDAY · 21 AUGUST 2026
+            DUBAI WORKSHOP · TODAY
           </span>
 
           <h1>Good evening, Al Kanz.</h1>
@@ -837,7 +1258,7 @@ function Dashboard({
           </div>
 
           <div className="floating-icon icon-c">
-            <IndianRupee size={19} />
+            <Banknote size={19} />
           </div>
         </div>
       </div>
@@ -977,34 +1398,34 @@ function Dashboard({
 
           <div className="finance-number">
             <span>Collected</span>
-            <strong>₹38,000</strong>
+            <strong>{money(totalPaid)}</strong>
           </div>
 
           <div className="large-progress">
-            <span style={{ width: "68%" }} />
+            <span style={{ width: `${Math.min(100, totalSales ? (totalPaid / totalSales) * 100 : 0)}%` }} />
           </div>
 
           <div className="finance-meta">
-            <span>68% collected</span>
-            <strong>₹18,000 pending</strong>
+            <span>{totalSales ? Math.round((totalPaid / totalSales) * 100) : 0}% collected</span>
+            <strong>{money(outstanding)} pending</strong>
           </div>
 
           <div className="recent-payments">
             <Payment
               name="Ahmed Rahman"
-              amount="₹10,000"
+              amount="AED 10,000"
               time="10 min ago"
             />
 
             <Payment
               name="Faris Traders"
-              amount="₹5,000"
+              amount="AED 5,000"
               time="1 hour ago"
             />
 
             <Payment
               name="Sameer Khan"
-              amount="₹8,000"
+              amount="AED 8,000"
               time="2 hours ago"
             />
           </div>
@@ -1531,7 +1952,7 @@ function JobDetailsDrawer({
               <div className="job-payment-form">
                 <label>Payment amount</label>
                 <div className="job-payment-input">
-                  <span>₹</span>
+                  <span>AED </span>
                   <input
                     autoFocus
                     type="number"
@@ -1734,7 +2155,7 @@ function MaterialsPage({
               <span>{material.category}</span>
               <h3>{material.name}</h3>
               <p>
-                ₹{material.price} / {material.unit}
+                AED {material.price} / {material.unit}
               </p>
             </div>
 
@@ -1870,113 +2291,103 @@ function StaffPage({ staff }) {
    BILLING
 ============================================================ */
 
-function BillingPage({
-  page,
-  jobs,
-  outstanding,
-  totalPaid,
-}) {
+function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, recordPayment }) {
   const invoices = jobs.map((job) => ({
     id: `INV-${job.id.replace("AK-", "")}`,
     customer: job.customer,
-    amount: job.amount,
-    paid: job.paid,
-    balance: job.amount - job.paid,
-    status:
-      job.amount === job.paid
-        ? "Paid"
-        : job.paid > 0
-        ? "Part Paid"
-        : "Unpaid",
+    jobId: job.id,
+    item: job.item,
+    amount: Number(job.amount || 0),
+    paid: Number(job.paid || 0),
+    balance: Math.max(0, Number(job.amount || 0) - Number(job.paid || 0)),
+    status: Number(job.amount || 0) <= Number(job.paid || 0) ? "Paid" : Number(job.paid || 0) > 0 ? "Part Paid" : "Unpaid",
   }));
+
+  const [selected, setSelected] = useState(null);
+  const [payment, setPayment] = useState("");
+
+  const shown = page === "Invoices" ? invoices : invoices;
 
   return (
     <>
-      <PageTitle
-        eyebrow="BILLING"
-        title={
-          page === "Billing"
-            ? "Billing"
-            : page
-        }
-        subtitle="Invoices, payments and customer billing."
-        button="Create Invoice"
-      />
+      <PageTitle eyebrow="BILLING · UAE" title={page === "Billing" ? "Billing" : page} subtitle="Invoices, payments and customer billing in AED." />
 
       <div className="billing-stats">
-        <Stat
-          icon={FileText}
-          label="Invoices"
-          value={invoices.length}
-          note="this month"
-          color="blue"
-        />
-
-        <Stat
-          icon={CircleDollarSign}
-          label="Billed"
-          value={money(
-            invoices.reduce(
-              (a, b) => a + b.amount,
-              0
-            )
-          )}
-          note="total invoices"
-          color="green"
-        />
-
-        <Stat
-          icon={CreditCard}
-          label="Collected"
-          value={money(totalPaid)}
-          note="payments received"
-          color="purple"
-        />
-
-        <Stat
-          icon={AlertCircle}
-          label="Outstanding"
-          value={money(outstanding)}
-          note="pending payment"
-          color="orange"
-        />
+        <Stat icon={FileText} label="Invoices" value={invoices.length} note="repair invoices" color="blue" />
+        <Stat icon={CircleDollarSign} label="Billed" value={money(invoices.reduce((a,b)=>a+b.amount,0))} note="total invoiced" color="green" />
+        <Stat icon={CreditCard} label="Collected" value={money(totalPaid)} note="customer payments" color="purple" />
+        <Stat icon={AlertCircle} label="Outstanding" value={money(outstanding)} note="pending collection" color="orange" />
       </div>
 
-      <div className="table-card">
-        <div className="table-head invoice-head">
-          <span>INVOICE</span>
-          <span>CUSTOMER</span>
-          <span>AMOUNT</span>
-          <span>PAID</span>
-          <span>BALANCE</span>
-          <span>STATUS</span>
+      {page === "Transactions" ? (
+        <div className="table-card">
+          <div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>
+          {payments.length ? payments.map((pay, i) => (
+            <div className="table-row" key={pay.id || i}>
+              <span>{pay.paid_at ? new Date(pay.paid_at).toLocaleDateString("en-AE") : "—"}</span>
+              <strong>{pay.notes || `Payment · ${pay.customer || "Customer"}`}</strong>
+              <Status status="Income" />
+              <span>{pay.payment_method || "Cash"}</span>
+              <strong className="income">+{money(pay.amount)}</strong>
+            </div>
+          )) : <EmptyState icon={ReceiptText} title="No transactions yet" text="Customer payments, expenses and transfers will appear here." />}
         </div>
+      ) : page !== "Payments" ? (
+        <div className="table-card">
+          <div className="table-head invoice-head"><span>INVOICE</span><span>CUSTOMER</span><span>JOB / ITEM</span><span>AMOUNT</span><span>PAID</span><span>BALANCE</span><span>STATUS</span><span /></div>
+          {shown.map((invoice) => (
+            <div className="table-row" key={invoice.id}>
+              <strong>{invoice.id}</strong>
+              <strong>{invoice.customer}</strong>
+              <div><strong>{invoice.jobId}</strong><small>{invoice.item}</small></div>
+              <strong>{money(invoice.amount)}</strong>
+              <strong>{money(invoice.paid)}</strong>
+              <strong>{money(invoice.balance)}</strong>
+              <Status status={invoice.status} />
+              <button className="row-action" onClick={() => setSelected(invoice)}><Eye size={16} /></button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="table-card">
+          <div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>METHOD</span><span>AMOUNT</span><span /></div>
+          {payments.length ? payments.map((pay, i) => (
+            <div className="table-row" key={pay.id || i}>
+              <span>{pay.paid_at ? new Date(pay.paid_at).toLocaleDateString("en-AE") : "—"}</span>
+              <strong>{pay.customer || pay.notes || "Customer Payment"}</strong>
+              <span>{pay.payment_method || "Cash"}</span>
+              <strong className="income">+{money(pay.amount)}</strong>
+              <span>{pay.reference || "—"}</span>
+            </div>
+          )) : <EmptyState icon={CreditCard} title="No payments yet" text="Payments recorded against repair jobs will appear here." />}
+        </div>
+      )}
 
-        {invoices.map((invoice) => (
-          <div
-            className="table-row"
-            key={invoice.id}
-          >
-            <strong>{invoice.id}</strong>
-
-            <strong>{invoice.customer}</strong>
-
-            <strong>
-              {money(invoice.amount)}
-            </strong>
-
-            <strong>
-              {money(invoice.paid)}
-            </strong>
-
-            <strong>
-              {money(invoice.balance)}
-            </strong>
-
-            <Status status={invoice.status} />
+      {selected && (
+        <div className="modal-backdrop">
+          <div className="card" style={{width:"min(620px,94vw)",padding:"28px",position:"relative"}}>
+            <button className="job-drawer-close" style={{position:"absolute",right:18,top:18}} onClick={()=>setSelected(null)}><X size={20}/></button>
+            <span className="eyebrow">UAE INVOICE</span>
+            <h2 style={{margin:"8px 0 4px"}}>{selected.id}</h2>
+            <p style={{marginTop:0,color:"#718078"}}>Al Kanz Upholstery · Dubai</p>
+            <div className="table-card" style={{marginTop:20}}>
+              <div className="table-row"><span>Customer</span><strong>{selected.customer}</strong></div>
+              <div className="table-row"><span>Repair Job</span><strong>{selected.jobId}</strong></div>
+              <div className="table-row"><span>Item</span><strong>{selected.item}</strong></div>
+              <div className="table-row"><span>Total</span><strong>{money(selected.amount)}</strong></div>
+              <div className="table-row"><span>Paid</span><strong>{money(selected.paid)}</strong></div>
+              <div className="table-row"><span>Balance</span><strong>{money(selected.balance)}</strong></div>
+            </div>
+            {selected.balance > 0 && (
+              <div style={{marginTop:20}}>
+                <label className="field"><span>Record payment</span><input type="number" min="0" max={selected.balance} value={payment} onChange={e=>setPayment(e.target.value)} placeholder="AED 0.00" /></label>
+                <button className="primary-button" style={{marginTop:12}} onClick={()=>{ recordPayment(selected.jobId, payment); setPayment(""); setSelected(null); }}><CreditCard size={16}/> Save Payment</button>
+              </div>
+            )}
+            <button className="secondary-button" style={{marginTop:12}} onClick={()=>window.print()}><Printer size={16}/> Print Invoice</button>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </>
   );
 }
@@ -1989,6 +2400,8 @@ function ReportsPage({
   jobs,
   totalPaid,
   outstanding,
+  totalExpenses = 0,
+  netCash = 0,
 }) {
   const total = jobs.reduce(
     (a, b) => a + b.amount,
@@ -2023,6 +2436,20 @@ function ReportsPage({
           title="Outstanding"
           value={money(outstanding)}
           note="Still to be collected"
+        />
+
+        <ReportBox
+          icon={Wallet}
+          title="Expenses"
+          value={money(totalExpenses)}
+          note="Workshop costs recorded"
+        />
+
+        <ReportBox
+          icon={Wrench}
+          title="Net Cash Movement"
+          value={money(netCash)}
+          note="Payments less expenses"
         />
 
         <ReportBox
@@ -2106,87 +2533,83 @@ function ReportBox({
    ACCOUNTS
 ============================================================ */
 
-function AccountsPage({
-  page,
-  totalPaid,
-  outstanding,
-}) {
+function AccountsPage({ page, totalPaid, outstanding, expenses = [], setExpenses, transfers = [], setTransfers, transactions = [], setTransactions, jobs = [] }) {
+  const [expenseForm, setExpenseForm] = useState({category:"Workshop",description:"",amount:"",account:"Cash",reference:""});
+  const [transferForm, setTransferForm] = useState({from_account:"Cash",to_account:"Bank",amount:"",reference:""});
+
+  const addExpense = async (e) => {
+    e.preventDefault();
+    const amount = Number(expenseForm.amount);
+    if (!expenseForm.description || !amount) return;
+    const row = { id: Date.now().toString(), ...expenseForm, amount, expense_date: new Date().toISOString().slice(0,10) };
+    setExpenses(prev=>[row,...prev]);
+    setTransactions(prev=>[{id:Date.now().toString()+"t",transaction_type:"Expense",description:expenseForm.description,amount,account:expenseForm.account,transaction_date:new Date().toISOString()},...prev]);
+    if (hasSupabase) {
+      const saved=await supabase.from("expenses").insert({category:expenseForm.category,description:expenseForm.description,amount,account:expenseForm.account,reference:expenseForm.reference,expense_date:row.expense_date}).select("*").single();
+      if(saved.error) alert("Expense saved locally, but cloud sync failed.");
+      else await supabase.from("transactions").insert({transaction_type:"Expense",description:expenseForm.description,amount,account:expenseForm.account,expense_id:saved.data.id});
+    }
+    auditLocal("Created expense","expense",row.id,row);
+    setExpenseForm({category:"Workshop",description:"",amount:"",account:"Cash",reference:""});
+  };
+
+  const addTransfer = async (e) => {
+    e.preventDefault();
+    const amount=Number(transferForm.amount);
+    if(!amount || transferForm.from_account===transferForm.to_account) return;
+    const row={id:Date.now().toString(),...transferForm,amount,transfer_date:new Date().toISOString().slice(0,10)};
+    setTransfers(prev=>[row,...prev]);
+    if(hasSupabase){
+      const saved=await supabase.from("money_transfers").insert({from_account:row.from_account,to_account:row.to_account,amount,reference:row.reference,transfer_date:row.transfer_date}).select("*").single();
+      if(saved.error) alert("Transfer saved locally, but cloud sync failed.");
+      else await supabase.from("transactions").insert({transaction_type:"Transfer",description:`Transfer ${row.from_account} → ${row.to_account}`,amount,account:row.to_account,transfer_id:saved.data.id});
+    }
+    auditLocal("Moved money","transfer",row.id,row);
+    setTransferForm({from_account:"Cash",to_account:"Bank",amount:"",reference:""});
+  };
+
+  const totalExpenses=expenses.reduce((a,b)=>a+Number(b.amount||0),0);
+  const net=totalPaid-totalExpenses;
+
   return (
     <>
-      <PageTitle
-        eyebrow="FINANCE"
-        title={page}
-        subtitle="Manage workshop accounts and money movement."
-      />
-
+      <PageTitle eyebrow="FINANCE · UAE" title={page} subtitle="Manage workshop income, expenses and money movement in AED." />
       <div className="account-tabs">
-        <button className={page === "Accounts" ? "active" : ""}>
-          Overview
-        </button>
-        <button className={page === "Ledger" ? "active" : ""}>
-          Ledger
-        </button>
-        <button className={page === "Expenses" ? "active" : ""}>
-          Expenses
-        </button>
-        <button className={page === "Move Money" ? "active" : ""}>
-          Move Money
-        </button>
+        {['Accounts','Ledger','Expenses','Move Money'].map(x=><button key={x} className={page===x?'active':''}>{x}</button>)}
       </div>
-
       <div className="account-overview">
-        <div className="account-big-card">
-          <span>Cash & Bank</span>
-          <strong>₹1,42,500</strong>
-          <small>Available balance</small>
-        </div>
-
-        <div className="account-big-card">
-          <span>Customer Receivables</span>
-          <strong>{money(outstanding)}</strong>
-          <small>Money to collect</small>
-        </div>
-
-        <div className="account-big-card">
-          <span>Payments Received</span>
-          <strong>{money(totalPaid)}</strong>
-          <small>This month</small>
-        </div>
+        <div className="account-big-card"><span>Customer Receivables</span><strong>{money(outstanding)}</strong><small>Outstanding invoices</small></div>
+        <div className="account-big-card"><span>Payments Received</span><strong>{money(totalPaid)}</strong><small>Customer collections</small></div>
+        <div className="account-big-card"><span>Expenses</span><strong>{money(totalExpenses)}</strong><small>Workshop expenses</small></div>
+        <div className="account-big-card"><span>Net Cash Movement</span><strong>{money(net)}</strong><small>Income minus expenses</small></div>
       </div>
 
-      <div className="table-card">
-        <div className="table-head">
-          <span>DATE</span>
-          <span>DESCRIPTION</span>
-          <span>TYPE</span>
-          <span>ACCOUNT</span>
-          <span>AMOUNT</span>
-        </div>
+      {page === 'Expenses' && <div className="card" style={{padding:24,marginBottom:18}}>
+        <CardHeader eyebrow="EXPENSES" title="Add workshop expense" subtitle="Record leather, labour, rent, transport or other business costs." />
+        <form onSubmit={addExpense} className="modal-grid">
+          <Field label="Description" value={expenseForm.description} onChange={v=>setExpenseForm({...expenseForm,description:v})} placeholder="Leather purchase"/>
+          <Field label="Amount" type="number" value={expenseForm.amount} onChange={v=>setExpenseForm({...expenseForm,amount:v})} placeholder="AED 0.00"/>
+          <SelectField label="Category" value={expenseForm.category} onChange={v=>setExpenseForm({...expenseForm,category:v})} options={['Workshop','Materials','Transport','Rent','Utilities','Salary','Other']}/>
+          <SelectField label="Account" value={expenseForm.account} onChange={v=>setExpenseForm({...expenseForm,account:v})} options={['Cash','Bank','Card']}/>
+          <button className="primary-button" type="submit"><Plus size={16}/> Add Expense</button>
+        </form>
+        <div className="table-card" style={{marginTop:20}}><div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>CATEGORY</span><span>ACCOUNT</span><span>AMOUNT</span></div>{expenses.map(x=><div className="table-row" key={x.id}><span>{x.expense_date}</span><strong>{x.description}</strong><span>{x.category}</span><span>{x.account}</span><strong className="expense">-{money(x.amount)}</strong></div>)}</div>
+      </div>}
 
-        <div className="table-row">
-          <span>21 Aug 2026</span>
-          <strong>Customer Payment · Ahmed Rahman</strong>
-          <Status status="Income" />
-          <span>Cash</span>
-          <strong className="income">+₹10,000</strong>
-        </div>
+      {page === 'Move Money' && <div className="card" style={{padding:24,marginBottom:18}}>
+        <CardHeader eyebrow="MOVE MONEY" title="Transfer between accounts" subtitle="Move funds between Cash, Bank and Card accounts." />
+        <form onSubmit={addTransfer} className="modal-grid">
+          <SelectField label="From" value={transferForm.from_account} onChange={v=>setTransferForm({...transferForm,from_account:v})} options={['Cash','Bank','Card']}/>
+          <SelectField label="To" value={transferForm.to_account} onChange={v=>setTransferForm({...transferForm,to_account:v})} options={['Cash','Bank','Card']}/>
+          <Field label="Amount" type="number" value={transferForm.amount} onChange={v=>setTransferForm({...transferForm,amount:v})} placeholder="AED 0.00"/>
+          <button className="primary-button" type="submit"><ArrowLeftRight size={16}/> Transfer</button>
+        </form>
+        <div className="table-card" style={{marginTop:20}}><div className="table-head"><span>DATE</span><span>FROM</span><span>TO</span><span>REFERENCE</span><span>AMOUNT</span></div>{transfers.map(x=><div className="table-row" key={x.id}><span>{x.transfer_date}</span><strong>{x.from_account}</strong><strong>{x.to_account}</strong><span>{x.reference||'—'}</span><strong>{money(x.amount)}</strong></div>)}</div>
+      </div>}
 
-        <div className="table-row">
-          <span>20 Aug 2026</span>
-          <strong>Leather purchase</strong>
-          <Status status="Expense" />
-          <span>Bank</span>
-          <strong className="expense">-₹18,500</strong>
-        </div>
+      {page === 'Ledger' && <div className="table-card"><div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>{transactions.map(x=><div className="table-row" key={x.id}><span>{x.transaction_date ? new Date(x.transaction_date).toLocaleDateString('en-AE') : '—'}</span><strong>{x.description}</strong><Status status={x.transaction_type}/><span>{x.account}</span><strong className={x.transaction_type==='Expense'?'expense':'income'}>{x.transaction_type==='Expense'?'-':'+'}{money(x.amount)}</strong></div>)}</div>}
 
-        <div className="table-row">
-          <span>19 Aug 2026</span>
-          <strong>Customer Payment · Faris Traders</strong>
-          <Status status="Income" />
-          <span>Cash</span>
-          <strong className="income">+₹5,000</strong>
-        </div>
-      </div>
+      {page === 'Accounts' && <div className="table-card"><div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>{transactions.slice(0,12).map(x=><div className="table-row" key={x.id}><span>{x.transaction_date ? new Date(x.transaction_date).toLocaleDateString('en-AE') : '—'}</span><strong>{x.description}</strong><Status status={x.transaction_type}/><span>{x.account}</span><strong className={x.transaction_type==='Expense'?'expense':'income'}>{x.transaction_type==='Expense'?'-':'+'}{money(x.amount)}</strong></div>)}</div>}
     </>
   );
 }
@@ -2195,7 +2618,7 @@ function AccountsPage({
    SETTINGS
 ============================================================ */
 
-function SettingsPage({ page }) {
+function SettingsPage({ page, theme, setTheme }) {
   return (
     <>
       <PageTitle
@@ -2210,22 +2633,18 @@ function SettingsPage({ page }) {
             <UserCog size={17} />
             User Profile
           </button>
-
           <button>
             <Settings size={17} />
             Workshop Settings
           </button>
-
           <button>
             <Bell size={17} />
             Notifications
           </button>
-
           <button>
             <ShieldCheck size={17} />
             Security
           </button>
-
           <button>
             <Lock size={17} />
             Password
@@ -2238,37 +2657,60 @@ function SettingsPage({ page }) {
             title="User information"
             subtitle="Update your account details."
           />
-
           <div className="settings-form">
             <label>
               Full name
               <input value="Al Kanz Admin" readOnly />
             </label>
-
             <label>
               Email
-              <input
-                value="admin@alkanzupholstery.com"
-                readOnly
-              />
+              <input value="admin@alkanzupholstery.com" readOnly />
             </label>
-
             <label>
               Phone
-              <input
-                value="+91 98765 00000"
-                readOnly
-              />
+              <input value="+971 50 000 0000" readOnly />
             </label>
-
             <label>
               Role
               <input value="Owner" readOnly />
             </label>
-
             <button className="primary-button">
               <Save size={16} />
               Save Changes
+            </button>
+          </div>
+        </div>
+
+        <div className="card appearance-card">
+          <CardHeader
+            eyebrow="APPEARANCE"
+            title="Choose your theme"
+            subtitle="Switch between the default, light, and dark workspace."
+          />
+          <div className="theme-options">
+            <button
+              className={`theme-option ${theme === "default" ? "active" : ""}`}
+              onClick={() => setTheme("default")}
+            >
+              <span className="theme-preview theme-preview-default" />
+              <div><strong>Default</strong><small>Al Kanz green</small></div>
+              {theme === "default" && <CheckCircle2 size={17} />}
+            </button>
+            <button
+              className={`theme-option ${theme === "light" ? "active" : ""}`}
+              onClick={() => setTheme("light")}
+            >
+              <span className="theme-preview theme-preview-light" />
+              <div><strong>Light</strong><small>Bright workspace</small></div>
+              {theme === "light" && <CheckCircle2 size={17} />}
+            </button>
+            <button
+              className={`theme-option ${theme === "dark" ? "active" : ""}`}
+              onClick={() => setTheme("dark")}
+            >
+              <span className="theme-preview theme-preview-dark" />
+              <div><strong>Dark</strong><small>Easy on the eyes</small></div>
+              {theme === "dark" && <CheckCircle2 size={17} />}
             </button>
           </div>
         </div>
@@ -2427,7 +2869,7 @@ function JobModal({ close, save }) {
             label="Phone number"
             value={form.phone}
             onChange={(v) => update("phone", v)}
-            placeholder="+91 XXXXX XXXXX"
+            placeholder="+971 5X XXX XXXX"
           />
         </div>
 
@@ -2513,7 +2955,7 @@ function JobModal({ close, save }) {
             type="number"
             value={form.materialCost}
             onChange={(v) => update("materialCost", v)}
-            placeholder="₹ 0"
+            placeholder="AED  0"
           />
         </div>
 
@@ -2528,21 +2970,21 @@ function JobModal({ close, save }) {
             type="number"
             value={form.labour}
             onChange={(v) => update("labour", v)}
-            placeholder="₹ 0"
+            placeholder="AED  0"
           />
           <Field
             label="Other charges"
             type="number"
             value={form.otherCharges}
             onChange={(v) => update("otherCharges", v)}
-            placeholder="₹ 0"
+            placeholder="AED  0"
           />
           <Field
             label="Discount"
             type="number"
             value={form.discount}
             onChange={(v) => update("discount", v)}
-            placeholder="₹ 0"
+            placeholder="AED  0"
           />
         </div>
 
@@ -2565,7 +3007,7 @@ function JobModal({ close, save }) {
             type="number"
             value={form.paid}
             onChange={(v) => update("paid", v)}
-            placeholder="₹ 0"
+            placeholder="AED  0"
           />
           <Field
             label="Expected delivery"
@@ -2645,7 +3087,7 @@ function CustomerModal({ close, save }) {
             label="Phone"
             value={phone}
             onChange={setPhone}
-            placeholder="+91 XXXXX XXXXX"
+            placeholder="+971 5X XXX XXXX"
           />
 
           <Field
@@ -2779,7 +3221,7 @@ function MaterialModal({ close, save }) {
                 price: v,
               })
             }
-            placeholder="₹ 0"
+            placeholder="AED  0"
           />
         </div>
 
@@ -4527,8 +4969,24 @@ button {
 
 .settings-layout {
   display: grid;
-  grid-template-columns: 230px 1fr;
+  grid-template-columns: 230px minmax(0, 1fr);
   gap: 17px;
+  align-items: start;
+}
+
+.settings-menu {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.settings-card {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.appearance-card {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .settings-menu {
@@ -4875,6 +5333,13 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .settings-menu,
+  .settings-card,
+  .appearance-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
   .settings-form {
     grid-template-columns: 1fr;
   }
@@ -4883,6 +5348,73 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* THEMES + SIDEBAR COLLAPSE */
+.app.theme-light {
+  --bg:#f7f9fb; --white:#fff; --soft:#fbfcfd; --green:#176f62;
+  --green-dark:#0e544a; --green-light:#e6f5f1; --sidebar:#174b45;
+  --sidebar-2:#216158; --text:#18272b; --text-2:#53666a; --muted:#8b989b;
+  --border:#e2e8eb;
+}
+.app.theme-dark {
+  --bg:#111817; --white:#1a2422; --soft:#202b29; --green:#67c5a8;
+  --green-dark:#49a88e; --green-light:#1d3b34; --sidebar:#091f1c;
+  --sidebar-2:#123a34; --sidebar-text:#b6cbc6; --text:#edf5f2;
+  --text-2:#b3c3bf; --muted:#849692; --border:#30403d;
+  --blue:#78b5dc; --blue-light:#1c3443; --orange:#d6a15e;
+  --orange-light:#3c3020; --purple:#a98bd0; --purple-light:#302741;
+  --red:#e08b83; --red-light:#3c2927; --shadow:0 8px 30px rgba(0,0,0,.25);
+}
+.app.theme-dark .topbar { background:rgba(26,36,34,.94); }
+.app.theme-dark .card,.app.theme-dark .jobs-modern-card,.app.theme-dark .table-card,
+.app.theme-dark .modal,.app.theme-dark .job-drawer,.app.theme-dark .settings-card,
+.app.theme-dark .appearance-card { background:var(--white); border-color:var(--border); color:var(--text); }
+.app.theme-dark .global-search,.app.theme-dark .jobs-search-modern,.app.theme-dark .jobs-status-filter,
+.app.theme-dark .field input,.app.theme-dark .field select,.app.theme-dark .settings-form input {
+  background:#202b29; color:var(--text); border-color:var(--border);
+}
+.app.theme-dark .jobs-page-header h1,.app.theme-dark .jobs-breadcrumb strong,
+.app.theme-dark .card h2,.app.theme-dark .page-title h1 { color:var(--text); }
+.app.theme-dark .jobs-page-header p,.app.theme-dark .jobs-eyebrow,
+.app.theme-dark .jobs-breadcrumb,.app.theme-dark .card-header p,.app.theme-dark .page-title p { color:var(--muted); }
+
+.sidebar-overlay { display:none; }
+.mobile-menu { width:38px;height:38px;display:grid;place-items:center;border-radius:9px;background:transparent;color:#667c80; }
+.mobile-menu:hover { background:#eef4f4; }
+
+@media(min-width:851px) {
+  .sidebar-collapsed .sidebar { width:78px; }
+  .sidebar-collapsed .main { width:calc(100% - 78px); margin-left:78px; }
+  .sidebar-collapsed .brand-area { padding-left:17px; padding-right:17px; }
+  .sidebar-collapsed .brand > div:last-child,.sidebar-collapsed .workshop-status,
+  .sidebar-collapsed .nav-section-title,.sidebar-collapsed .nav-item > span,
+  .sidebar-collapsed .nav-item > svg:last-child,.sidebar-collapsed .sub-menu,
+  .sidebar-collapsed .account-card > div:not(.account-avatar),
+  .sidebar-collapsed .account-card > svg,.sidebar-collapsed .logout { display:none; }
+  .sidebar-collapsed .brand { justify-content:center; }
+  .sidebar-collapsed .nav-scroll { padding-left:10px;padding-right:10px; }
+  .sidebar-collapsed .nav-item { justify-content:center;padding:0; }
+  .sidebar-collapsed .sidebar-account { padding:12px 10px; }
+  .sidebar-collapsed .account-card { justify-content:center; }
+}
+.theme-options { display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:0 25px 25px; }
+.theme-option { min-height:84px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--soft);color:var(--text);display:flex;align-items:center;gap:11px;text-align:left;transition:.2s; }
+.theme-option:hover { border-color:var(--green);transform:translateY(-1px); }
+.theme-option.active { border-color:var(--green);box-shadow:0 0 0 2px var(--green-light); }
+.theme-option > div { flex:1; }
+.theme-option strong,.theme-option small { display:block; }
+.theme-option strong { font-size:12px; }
+.theme-option small { margin-top:3px;color:var(--muted);font-size:10px; }
+.theme-preview { width:38px;height:38px;flex:0 0 38px;border-radius:9px;border:1px solid var(--border); }
+.theme-preview-default { background:linear-gradient(135deg,#0d3d37 0 50%,#b9df79 50%); }
+.theme-preview-light { background:linear-gradient(135deg,#fff 0 50%,#e6f5f1 50%); }
+.theme-preview-dark { background:linear-gradient(135deg,#091f1c 0 50%,#67c5a8 50%); }
+@media(max-width:850px) {
+  .sidebar-overlay { display:block;position:fixed;inset:0;z-index:45;border:0;background:rgba(0,0,0,.35); }
+  .sidebar { width:250px; }
+  .theme-options { grid-template-columns:1fr; }
+}
+
 `;
 
 
