@@ -611,7 +611,7 @@ function App() {
   const [loadingData, setLoadingData] = useState(false);
   const [dbReady, setDbReady] = useState(hasSupabase);
 
-  const [open, setOpen] = useState("Jobs & Repairs");
+  const [openSections, setOpenSections] = useState(() => new Set(["Jobs & Repairs"]));
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -619,6 +619,8 @@ function App() {
   const [modal, setModal] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
   const [search, setSearch] = useState("");
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
 
   useEffect(() => {
     const local = loadLocalData();
@@ -699,32 +701,37 @@ const netCash = totalPaid - totalExpenses;
     (j) => j.status === "Ready"
   ).length;
 
-  const navigate = (name) => {
-  setPage(name);
-  setSidebarOpen(false);
-
-  // Keep the parent section open when selecting its child
-  const parentSection = NAVIGATION
-    .flatMap(group => group.items)
-    .find(item => item.children?.includes(name));
-
-  if (parentSection) {
-    setOpen(parentSection.name);
-  } else {
-    // Opening a main section closes the other sections
-    const hasChildren = NAVIGATION
-      .flatMap(group => group.items)
-      .find(item => item.name === name)?.children?.length;
-
-    if (hasChildren) {
-      setOpen(name);
+  const getParentSection = (name) => {
+    for (const group of NAVIGATION) {
+      for (const item of group.items) {
+        if (item.children?.includes(name)) return item.name;
+      }
     }
-  }
+    return null;
+  };
 
-  if (name === "New Repair Job") {
-    setModal("job");
-  }
-};
+  const navigate = (name) => {
+    setPage(name);
+    setSidebarOpen(false);
+
+    // Child navigation never collapses its parent. Each expandable
+    // section remembers its own open/closed state independently.
+    const parent = getParentSection(name);
+    if (parent) {
+      setOpenSections((prev) => {
+        const next = new Set(prev);
+        next.add(parent);
+        return next;
+      });
+    }
+
+    setNotificationOpen(false);
+    setAdminMenuOpen(false);
+
+    if (name === "New Repair Job") {
+      setModal("job");
+    }
+  };
 
   const addJob = async (job) => {
     const id = `AK-${1050 + jobs.length}`;
@@ -827,6 +834,57 @@ const netCash = totalPaid - totalExpenses;
     auditLocal("Created customer", "customer", newCustomer.id, { name: customer.name });
   };
 
+  const addSupplier = async (supplier) => {
+    const newSupplier = {
+      ...supplier,
+      id: Date.now(),
+      balance: Number(supplier.balance || 0),
+    };
+    setSuppliers((prev) => [newSupplier, ...prev]);
+    setModal(null);
+
+    if (hasSupabase) {
+      try {
+        const { error } = await supabase.from("suppliers").insert({
+          name: supplier.name,
+          phone: supplier.phone,
+          material: supplier.material,
+          balance: Number(supplier.balance || 0),
+        });
+        if (error) throw error;
+      } catch (error) {
+        console.error("Supplier save failed:", error);
+        alert("Supplier saved locally, but cloud sync failed.");
+      }
+    }
+    auditLocal("Created supplier", "supplier", newSupplier.id, { name: supplier.name });
+  };
+
+  const addStaff = async (person) => {
+    const newStaff = {
+      ...person,
+      id: Date.now(),
+    };
+    setStaff((prev) => [newStaff, ...prev]);
+    setModal(null);
+
+    if (hasSupabase) {
+      try {
+        const { error } = await supabase.from("staff").insert({
+          name: person.name,
+          role: person.role,
+          phone: person.phone,
+          status: person.status,
+        });
+        if (error) throw error;
+      } catch (error) {
+        console.error("Staff save failed:", error);
+        alert("Staff saved locally, but cloud sync failed.");
+      }
+    }
+    auditLocal("Created staff member", "staff", newStaff.id, { name: person.name });
+  };
+
   const filteredJobs = useMemo(() => {
     const q = search.toLowerCase();
 
@@ -843,7 +901,7 @@ const netCash = totalPaid - totalExpenses;
 
   return (
     <>
-      <style>{CSS}</style>
+      <style>{FINAL_CSS}</style>
 
       <div className={`app theme-${theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} data-theme={theme}>
         {/* =====================================================
@@ -903,9 +961,14 @@ const netCash = totalPaid - totalExpenses;
                         }`}
                         onClick={() => {
                           if (hasChildren) {
-                            setOpen((prev) =>
-                              prev === item.name ? null : item.name
-                            );
+                            setOpenSections((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(item.name)) next.delete(item.name);
+                              else next.add(item.name);
+                              return next;
+                            });
+                            setNotificationOpen(false);
+                            setAdminMenuOpen(false);
                           } else {
                             navigate(item.name);
                           }
@@ -918,7 +981,7 @@ const netCash = totalPaid - totalExpenses;
                           <ChevronDown
                             size={14}
                             className={
-                              open === item.name
+                              openSections.has(item.name)
                                 ? "chevron-open"
                                 : ""
                             }
@@ -927,7 +990,7 @@ const netCash = totalPaid - totalExpenses;
                       </button>
 
                       {hasChildren &&
-                        open === item.name && (
+                        openSections.has(item.name) && (
                           <div className="sub-menu">
                             {item.children.map(
                               (child) => (
@@ -1019,18 +1082,106 @@ const netCash = totalPaid - totalExpenses;
                 <kbd>⌘ K</kbd>
               </div>
 
-              <button className="notification">
-                <Bell size={18} />
-                <i />
-              </button>
+              <div className="notification-wrap">
+                <button
+                  type="button"
+                  className={`notification ${notificationOpen ? "active" : ""}`}
+                  aria-label="Open notifications"
+                  aria-expanded={notificationOpen}
+                  onClick={() => {
+                    setNotificationOpen(prev => !prev);
+                    setAdminMenuOpen(false);
+                  }}
+                >
+                  <Bell size={18} />
+                  <i />
+                </button>
 
-              <div className="admin-profile">
-                <div>AK</div>
-                <section>
-                  <strong>Admin</strong>
-                  <span>Owner</span>
-                </section>
-                <ChevronDown size={14} />
+                {notificationOpen && (
+                  <div className="notification-popover">
+                    <div className="popover-title">
+                      <div>
+                        <span>UPDATES</span>
+                        <strong>Notifications</strong>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setNotificationOpen(false)}
+                        aria-label="Close notifications"
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+
+                    <div className="notification-item">
+                      <span className="notification-icon"><Bell size={15} /></span>
+                      <div>
+                        <strong>Workshop is ready</strong>
+                        <p>Check today's jobs, payments and expenses.</p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="notification-footer"
+                      onClick={() => setNotificationOpen(false)}
+                    >
+                      Mark as viewed
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="admin-menu-wrap">
+                <button
+                  type="button"
+                  className="admin-profile"
+                  onClick={() => setAdminMenuOpen((prev) => !prev)}
+                  aria-expanded={adminMenuOpen}
+                  aria-label="Open Admin menu"
+                >
+                  <div>AK</div>
+                  <section>
+                    <strong>Admin</strong>
+                    <span>Owner</span>
+                  </section>
+                  <ChevronDown
+                    size={14}
+                    className={adminMenuOpen ? "chevron-open" : ""}
+                  />
+                </button>
+
+                {adminMenuOpen && (
+                  <div className="admin-dropdown">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminMenuOpen(false);
+                        navigate("User");
+                      }}
+                    >
+                      <UserCog size={15} />
+                      <span>My Profile</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminMenuOpen(false);
+                        navigate("Settings");
+                      }}
+                    >
+                      <Settings size={15} />
+                      <span>Settings</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminMenuOpen(false)}
+                    >
+                      <X size={15} />
+                      <span>Close</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </header>
@@ -1076,11 +1227,11 @@ const netCash = totalPaid - totalExpenses;
             )}
 
             {page === "Suppliers" && (
-              <SuppliersPage suppliers={suppliers} />
+              <SuppliersPage suppliers={suppliers} setSuppliers={setSuppliers} setModal={setModal} />
             )}
 
             {page === "Staff" && (
-              <StaffPage staff={staff} />
+              <StaffPage staff={staff} setStaff={setStaff} setModal={setModal} />
             )}
 
             {(page === "Billing" ||
@@ -1090,8 +1241,10 @@ const netCash = totalPaid - totalExpenses;
               <BillingPage
                 page={page}
                 jobs={jobs}
+                payments={payments}
                 outstanding={outstanding}
                 totalPaid={totalPaid}
+                recordPayment={recordPayment}
               />
             )}
 
@@ -1100,6 +1253,9 @@ const netCash = totalPaid - totalExpenses;
                 jobs={jobs}
                 totalPaid={totalPaid}
                 outstanding={outstanding}
+                totalExpenses={totalExpenses}
+                netCash={netCash}
+                expenses={expenses}
               />
             )}
 
@@ -1111,6 +1267,13 @@ const netCash = totalPaid - totalExpenses;
                 page={page}
                 totalPaid={totalPaid}
                 outstanding={outstanding}
+                expenses={expenses}
+                setExpenses={setExpenses}
+                transfers={transfers}
+                setTransfers={setTransfers}
+                transactions={transactions}
+                setTransactions={setTransactions}
+                jobs={jobs}
               />
             )}
 
@@ -1165,6 +1328,14 @@ const netCash = totalPaid - totalExpenses;
             }}
           />
         )}
+
+        {modal === "supplier" && (
+          <SupplierModal close={() => setModal(null)} save={addSupplier} />
+        )}
+
+        {modal === "staff" && (
+          <StaffModal close={() => setModal(null)} save={addStaff} />
+        )}
       </div>
     </>
   );
@@ -1213,29 +1384,24 @@ function Dashboard({
           <span>AL KANZ WORKSHOP</span>
 
           <h2>
-            Repair. Restore.
+            Run your workshop.
             <br />
-            Make it new again.
+            Track every payment.
           </h2>
 
           <p>
-            Manage upholstery jobs, leather replacement,
-            materials, payments and customer billing from
-            one place.
+            Manage customers, materials, billing, expenses
+            and workshop performance from one place.
           </p>
 
           <div className="hero-actions">
-            <button
-              onClick={() => setModal("job")}
-            >
-              <Plus size={15} />
-              New repair job
+            <button onClick={() => navigate("Billing")}>
+              <Receipt size={15} />
+              Open billing
             </button>
 
-            <button
-              onClick={() => navigate("Active Jobs")}
-            >
-              View active jobs
+            <button onClick={() => navigate("Reports")}>
+              View reports
               <ArrowUpRight size={14} />
             </button>
           </div>
@@ -2193,7 +2359,7 @@ function MaterialsPage({
    SUPPLIERS
 ============================================================ */
 
-function SuppliersPage({ suppliers }) {
+function SuppliersPage({ suppliers, setSuppliers, setModal }) {
   return (
     <>
       <PageTitle
@@ -2201,6 +2367,7 @@ function SuppliersPage({ suppliers }) {
         title="Suppliers"
         subtitle="Manage material suppliers and balances."
         button="Add Supplier"
+        onClick={() => setModal("supplier")}
       />
 
       <div className="table-card">
@@ -2213,24 +2380,15 @@ function SuppliersPage({ suppliers }) {
         </div>
 
         {suppliers.map((supplier) => (
-          <div
-            className="table-row supplier-row"
-            key={supplier.id}
-          >
+          <div className="table-row supplier-row" key={supplier.id}>
             <div>
               <strong>{supplier.name}</strong>
               <small>Supplier #{supplier.id}</small>
             </div>
-
             <span>{supplier.phone}</span>
-
             <span>{supplier.material}</span>
-
-            <strong>
-              {money(supplier.balance)}
-            </strong>
-
-            <button className="row-action">
+            <strong>{money(supplier.balance)}</strong>
+            <button className="row-action" type="button">
               <Eye size={16} />
             </button>
           </div>
@@ -2244,7 +2402,7 @@ function SuppliersPage({ suppliers }) {
    STAFF
 ============================================================ */
 
-function StaffPage({ staff }) {
+function StaffPage({ staff, setStaff, setModal }) {
   return (
     <>
       <PageTitle
@@ -2252,32 +2410,19 @@ function StaffPage({ staff }) {
         title="Staff"
         subtitle="Manage workshop employees and responsibilities."
         button="Add Staff"
+        onClick={() => setModal("staff")}
       />
 
       <div className="staff-grid">
         {staff.map((person) => (
           <div className="staff-card" key={person.id}>
             <div className="staff-avatar">
-              {person.name
-                .split(" ")
-                .map((x) => x[0])
-                .join("")
-                .slice(0, 2)}
+              {person.name.split(" ").map((x) => x[0]).join("").slice(0, 2)}
             </div>
-
             <h3>{person.name}</h3>
-
             <p>{person.role}</p>
-
             <span>{person.phone}</span>
-
-            <label
-              className={
-                person.status === "Active"
-                  ? "staff-active"
-                  : "staff-leave"
-              }
-            >
+            <label className={person.status === "Active" ? "staff-active" : "staff-leave"}>
               {person.status}
             </label>
           </div>
@@ -2293,7 +2438,7 @@ function StaffPage({ staff }) {
 
 function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, recordPayment }) {
   const invoices = jobs.map((job) => ({
-    id: `INV-${job.id.replace("AK-", "")}`,
+    id: `INV-${String(job.id).replace("AK-", "")}`,
     customer: job.customer,
     jobId: job.id,
     item: job.item,
@@ -2302,18 +2447,74 @@ function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, record
     balance: Math.max(0, Number(job.amount || 0) - Number(job.paid || 0)),
     status: Number(job.amount || 0) <= Number(job.paid || 0) ? "Paid" : Number(job.paid || 0) > 0 ? "Part Paid" : "Unpaid",
   }));
-
   const [selected, setSelected] = useState(null);
   const [payment, setPayment] = useState("");
+  const [billPrinting, setBillPrinting] = useState(false);
+  const [billRun, setBillRun] = useState(0);
+  const collectedPercent = invoices.reduce((a, b) => a + b.amount, 0) > 0
+    ? Math.min(100, (totalPaid / invoices.reduce((a, b) => a + b.amount, 0)) * 100)
+    : 0;
 
-  const shown = page === "Invoices" ? invoices : invoices;
+  const startBillPrint = () => {
+    setBillPrinting(false);
+    setBillRun((n) => n + 1);
+    requestAnimationFrame(() => setBillPrinting(true));
+    window.setTimeout(() => setBillPrinting(false), 4200);
+  };
 
   return (
     <>
       <PageTitle eyebrow="BILLING · UAE" title={page === "Billing" ? "Billing" : page} subtitle="Invoices, payments and customer billing in AED." />
 
+      {page === "Billing" && (
+        <div className={`billing-machine ${billPrinting ? "is-printing" : ""}`} key={billRun}>
+          <div className="billing-machine-screen">
+            <div className="machine-topline"><span>AL KANZ BILLING TERMINAL</span><b><i /> ONLINE</b></div>
+            <div className="machine-main">
+              <div className="bill-create-panel">
+                <small>CREATE BILL</small>
+                <strong>{money(totalPaid)}</strong>
+                <span>{invoices.length} invoices · {money(outstanding)} outstanding</span>
+                <button type="button" className="create-bill-button" onClick={startBillPrint}>
+                  <ReceiptText size={15} /> Create & Print Bill
+                </button>
+              </div>
+              <div className="machine-ring" style={{ "--billing-progress": `${collectedPercent}%` }}>
+                <div><b>{Math.round(collectedPercent)}%</b><span>collected</span></div>
+              </div>
+            </div>
+            <div className="billing-transfer-animation" aria-hidden="true">
+              <div className="bill-source"><div className="bill-paper-icon"><FileText size={18} /></div><span>BILL</span></div>
+              <div className="wave-track">
+                {["B","I","L","L","I","N","G"].map((letter, index) => (
+                  <span key={`${letter}-${index}`} style={{ "--wave-delay": `${index * 0.12}s` }}>{letter}</span>
+                ))}
+              </div>
+              <div className="printer-icon"><Printer size={25} /><i /></div>
+            </div>
+            <div className="machine-scanline" />
+          </div>
+          <div className="billing-machine-receipt">
+            <div className="receipt-printer">
+              <div className="printer-top"><span className="printer-light" /><span>AL KANZ PRINTER</span></div>
+              <div className="printer-slot">
+                <div className="printed-paper">
+                  <strong>AL KANZ</strong><span>UPHOLSTERY BILL</span><i />
+                  <small>Customer invoice · AED</small><b>{money(totalPaid)}</b>
+                </div>
+              </div>
+            </div>
+            <span className="receipt-caption">PAYMENT RECEIPT</span>
+            <strong>{billPrinting ? "Printing your bill..." : "Ready for billing"}</strong>
+            <div className="receipt-line"><i /> <i /> <i /></div>
+            <small>Bill data travels to the printer as an animated wave, then the receipt rolls out.</small>
+          </div>
+          <div className="machine-status"><span /> {billPrinting ? "Printing bill" : "Payment system ready"} <b>· AED</b></div>
+        </div>
+      )}
+
       <div className="billing-stats">
-        <Stat icon={FileText} label="Invoices" value={invoices.length} note="repair invoices" color="blue" />
+        <Stat icon={FileText} label="Invoices" value={invoices.length} note="workshop invoices" color="blue" />
         <Stat icon={CircleDollarSign} label="Billed" value={money(invoices.reduce((a,b)=>a+b.amount,0))} note="total invoiced" color="green" />
         <Stat icon={CreditCard} label="Collected" value={money(totalPaid)} note="customer payments" color="purple" />
         <Stat icon={AlertCircle} label="Outstanding" value={money(outstanding)} note="pending collection" color="orange" />
@@ -2330,12 +2531,12 @@ function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, record
               <span>{pay.payment_method || "Cash"}</span>
               <strong className="income">+{money(pay.amount)}</strong>
             </div>
-          )) : <EmptyState icon={ReceiptText} title="No transactions yet" text="Customer payments, expenses and transfers will appear here." />}
+          )) : <EmptyState icon={ReceiptText} title="No transactions yet" text="Customer payments will appear here." />}
         </div>
       ) : page !== "Payments" ? (
         <div className="table-card">
           <div className="table-head invoice-head"><span>INVOICE</span><span>CUSTOMER</span><span>JOB / ITEM</span><span>AMOUNT</span><span>PAID</span><span>BALANCE</span><span>STATUS</span><span /></div>
-          {shown.map((invoice) => (
+          {invoices.map((invoice) => (
             <div className="table-row" key={invoice.id}>
               <strong>{invoice.id}</strong>
               <strong>{invoice.customer}</strong>
@@ -2350,7 +2551,7 @@ function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, record
         </div>
       ) : (
         <div className="table-card">
-          <div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>METHOD</span><span>AMOUNT</span><span /></div>
+          <div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>METHOD</span><span>AMOUNT</span><span>REFERENCE</span></div>
           {payments.length ? payments.map((pay, i) => (
             <div className="table-row" key={pay.id || i}>
               <span>{pay.paid_at ? new Date(pay.paid_at).toLocaleDateString("en-AE") : "—"}</span>
@@ -2359,7 +2560,7 @@ function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, record
               <strong className="income">+{money(pay.amount)}</strong>
               <span>{pay.reference || "—"}</span>
             </div>
-          )) : <EmptyState icon={CreditCard} title="No payments yet" text="Payments recorded against repair jobs will appear here." />}
+          )) : <EmptyState icon={CreditCard} title="No payments yet" text="Payments recorded against jobs will appear here." />}
         </div>
       )}
 
@@ -2372,13 +2573,13 @@ function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, record
             <p style={{marginTop:0,color:"#718078"}}>Al Kanz Upholstery · Dubai</p>
             <div className="table-card" style={{marginTop:20}}>
               <div className="table-row"><span>Customer</span><strong>{selected.customer}</strong></div>
-              <div className="table-row"><span>Repair Job</span><strong>{selected.jobId}</strong></div>
+              <div className="table-row"><span>Job</span><strong>{selected.jobId}</strong></div>
               <div className="table-row"><span>Item</span><strong>{selected.item}</strong></div>
               <div className="table-row"><span>Total</span><strong>{money(selected.amount)}</strong></div>
               <div className="table-row"><span>Paid</span><strong>{money(selected.paid)}</strong></div>
               <div className="table-row"><span>Balance</span><strong>{money(selected.balance)}</strong></div>
             </div>
-            {selected.balance > 0 && (
+            {selected.balance > 0 && recordPayment && (
               <div style={{marginTop:20}}>
                 <label className="field"><span>Record payment</span><input type="number" min="0" max={selected.balance} value={payment} onChange={e=>setPayment(e.target.value)} placeholder="AED 0.00" /></label>
                 <button className="primary-button" style={{marginTop:12}} onClick={()=>{ recordPayment(selected.jobId, payment); setPayment(""); setSelected(null); }}><CreditCard size={16}/> Save Payment</button>
@@ -2402,108 +2603,84 @@ function ReportsPage({
   outstanding,
   totalExpenses = 0,
   netCash = 0,
+  expenses = [],
 }) {
-  const total = jobs.reduce(
-    (a, b) => a + b.amount,
-    0
-  );
+  const total = jobs.reduce((a, b) => a + Number(b.amount || 0), 0);
+
+  const monthlyRevenue = Array.from({ length: 12 }, (_, month) => ({
+    month: new Date(2026, month, 1).toLocaleString("en", { month: "short" }),
+    revenue: jobs.reduce((sum, job) => {
+      const raw = job.date || "";
+      const d = new Date(raw);
+      return !Number.isNaN(d.getTime()) && d.getMonth() === month
+        ? sum + Number(job.amount || 0)
+        : sum;
+    }, 0),
+  }));
+
+  const dailyExpenses = Array.from({ length: 7 }, (_, index) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (6 - index));
+    const key = d.toISOString().slice(0, 10);
+    return {
+      day: d.toLocaleDateString("en-AE", { weekday: "short", day: "2-digit" }),
+      amount: expenses.reduce((sum, expense) => {
+        const expenseKey = String(expense.expense_date || expense.date || "").slice(0, 10);
+        return expenseKey === key ? sum + Number(expense.amount || 0) : sum;
+      }, 0),
+    };
+  });
 
   return (
     <>
       <PageTitle
         eyebrow="FINANCE"
         title="Reports"
-        subtitle="Understand workshop performance and finances."
+        subtitle="Understand workshop performance, revenue and daily expenses."
       />
 
       <div className="report-grid">
-        <ReportBox
-          icon={TrendingUp}
-          title="Total Revenue"
-          value={money(total)}
-          note="+12.4% compared to last month"
-        />
-
-        <ReportBox
-          icon={CircleDollarSign}
-          title="Payments Collected"
-          value={money(totalPaid)}
-          note="Customer payments received"
-        />
-
-        <ReportBox
-          icon={AlertCircle}
-          title="Outstanding"
-          value={money(outstanding)}
-          note="Still to be collected"
-        />
-
-        <ReportBox
-          icon={Wallet}
-          title="Expenses"
-          value={money(totalExpenses)}
-          note="Workshop costs recorded"
-        />
-
-        <ReportBox
-          icon={Wrench}
-          title="Net Cash Movement"
-          value={money(netCash)}
-          note="Payments less expenses"
-        />
-
-        <ReportBox
-          icon={Wrench}
-          title="Jobs Completed"
-          value={
-            jobs.filter(
-              (j) =>
-                j.status === "Ready" ||
-                j.status === "Delivered"
-            ).length
-          }
-          note="Ready or delivered jobs"
-        />
+        <ReportBox icon={TrendingUp} title="Total Revenue" value={money(total)} note="Total value of workshop jobs" />
+        <ReportBox icon={CircleDollarSign} title="Payments Collected" value={money(totalPaid)} note="Customer payments received" />
+        <ReportBox icon={AlertCircle} title="Outstanding" value={money(outstanding)} note="Still to be collected" />
+        <ReportBox icon={Wallet} title="Expenses" value={money(totalExpenses)} note="Workshop costs recorded" />
+        <ReportBox icon={TrendingUp} title="Net Cash Movement" value={money(netCash)} note="Payments less expenses" />
+        <ReportBox icon={CheckCircle2} title="Jobs Completed" value={jobs.filter(j => j.status === "Ready" || j.status === "Delivered").length} note="Ready or delivered jobs" />
       </div>
 
-      <div className="card report-chart">
-        <CardHeader
-          eyebrow="REVENUE"
-          title="Monthly workshop performance"
-          subtitle="Revenue overview"
-        />
+      <div className="reports-chart-grid">
+        <div className="card report-chart">
+          <CardHeader eyebrow="REVENUE" title="Monthly workshop performance" subtitle="Revenue by month from recorded jobs" />
+          <div className="bars live-bars">
+            {monthlyRevenue.map((item) => {
+              const max = Math.max(...monthlyRevenue.map(x => x.revenue), 1);
+              const height = item.revenue ? Math.max(8, (item.revenue / max) * 100) : 4;
+              return (
+                <div className="bar-wrap" key={item.month}>
+                  <div className="bar animated-bar" style={{ height: `${height}%` }} title={money(item.revenue)} />
+                  <span>{item.month}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
-        <div className="bars">
-          {[42, 58, 47, 72, 64, 86, 75, 94, 69, 82, 77, 91].map(
-            (height, index) => (
-              <div className="bar-wrap" key={index}>
-                <div
-                  className="bar"
-                  style={{
-                    height: `${height}%`,
-                  }}
-                />
-                <span>
-                  {
-                    [
-                      "Jan",
-                      "Feb",
-                      "Mar",
-                      "Apr",
-                      "May",
-                      "Jun",
-                      "Jul",
-                      "Aug",
-                      "Sep",
-                      "Oct",
-                      "Nov",
-                      "Dec",
-                    ][index]
-                  }
-                </span>
-              </div>
-            )
-          )}
+        <div className="card report-chart daily-expense-card">
+          <CardHeader eyebrow="EXPENSES" title="Daily expense" subtitle="Last 7 days of recorded expenses" />
+          <div className="expense-bars">
+            {dailyExpenses.map((item) => {
+              const max = Math.max(...dailyExpenses.map(x => x.amount), 1);
+              const height = item.amount ? Math.max(8, (item.amount / max) * 100) : 4;
+              return (
+                <div className="expense-bar-wrap" key={item.day}>
+                  <span className="expense-value">{money(item.amount)}</span>
+                  <div className="expense-bar" style={{ height: `${height}%` }} title={money(item.amount)} />
+                  <span className="expense-day">{item.day}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </>
@@ -3248,6 +3425,89 @@ function MaterialModal({ close, save }) {
 }
 
 /* ============================================================
+   SUPPLIER MODAL
+============================================================ */
+
+function SupplierModal({ close, save }) {
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    material: "Leather",
+    balance: "",
+  });
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.phone.trim()) {
+      alert("Please enter supplier name and phone number.");
+      return;
+    }
+    save({
+      ...form,
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      balance: Number(form.balance || 0),
+    });
+  };
+
+  return (
+    <Modal title="Add Supplier" subtitle="Add a material supplier to your workshop." close={close}>
+      <form onSubmit={submit}>
+        <div className="modal-grid">
+          <Field label="Supplier name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="Leather World" />
+          <Field label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="+971 50 000 0000" />
+          <SelectField label="Material" value={form.material} onChange={(v) => setForm({ ...form, material: v })} options={["Leather", "Fabric", "Foam", "Accessories", "Multiple Materials"]} />
+          <Field label="Balance" type="number" value={form.balance} onChange={(v) => setForm({ ...form, balance: v })} placeholder="AED 0" />
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="secondary-button" onClick={close}>Cancel</button>
+          <button type="submit" className="primary-button"><Save size={16} />Save Supplier</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ============================================================
+   STAFF MODAL
+============================================================ */
+
+function StaffModal({ close, save }) {
+  const [form, setForm] = useState({
+    name: "",
+    role: "Upholsterer",
+    phone: "",
+    status: "Active",
+  });
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.phone.trim()) {
+      alert("Please enter staff name and phone number.");
+      return;
+    }
+    save({ ...form, name: form.name.trim(), phone: form.phone.trim() });
+  };
+
+  return (
+    <Modal title="Add Staff" subtitle="Add a workshop employee and assign their role." close={close}>
+      <form onSubmit={submit}>
+        <div className="modal-grid">
+          <Field label="Staff name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="Full name" />
+          <Field label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="+971 50 000 0000" />
+          <SelectField label="Role" value={form.role} onChange={(v) => setForm({ ...form, role: v })} options={["Upholsterer", "Master Upholsterer", "Leather Technician", "Stitching Specialist", "Foam Technician", "Helper", "Manager"]} />
+          <SelectField label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={["Active", "On Leave"]} />
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="secondary-button" onClick={close}>Cancel</button>
+          <button type="submit" className="primary-button"><Save size={16} />Save Staff</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ============================================================
    MODAL BASE
 ============================================================ */
 
@@ -3743,8 +4003,52 @@ button {
   top: 8px;
 }
 
+.admin-menu-wrap {
+  position: relative;
+}
+
 .admin-profile {
   gap: 8px;
+  padding: 3px 5px;
+  background: transparent;
+  border-radius: 10px;
+  color: var(--text);
+}
+
+.admin-profile:hover {
+  background: #eef4f4;
+}
+
+.admin-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 175px;
+  padding: 6px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 35px rgba(20, 53, 57, .15);
+  z-index: 100;
+}
+
+.admin-dropdown button {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 10px;
+  text-align: left;
+}
+
+.admin-dropdown button:hover {
+  background: var(--green-light);
+  color: var(--green);
 }
 
 .admin-profile > div {
@@ -5533,8 +5837,1102 @@ const AL_KANZ_JOB_UI = `
 .job-form-notes textarea { width:100%; resize:vertical; border:1px solid #d9e4df; border-radius:9px; padding:11px 12px; outline:none; font:inherit; font-size:13px; color:#1b2b24; background:#fbfcfc; }
 @media(max-width:900px){ .jobs-modern-head,.jobs-modern-row{grid-template-columns:1fr 1.2fr 1.5fr .9fr .8fr .8fr .5fr; min-width:900px;} .jobs-modern-card{overflow-x:auto;} }
 @media(max-width:650px){ .jobs-page-header{align-items:flex-start; flex-direction:column;} .jobs-toolbar-modern{flex-direction:column;} .jobs-search-modern{width:100%;} .job-drawer{width:100%;} .job-detail-grid{grid-template-columns:1fr;} .job-detail-box:first-child{border-right:0;border-bottom:1px solid #dfe8e4;} }
+
+/* ============================================================
+   ADMIN DROPDOWN + BILLING TERMINAL + LIVE REPORTS
+============================================================ */
+.admin-menu-wrap { position:relative; }
+.admin-profile { border:0; background:transparent; padding:4px 6px; border-radius:12px; cursor:pointer; color:inherit; }
+.admin-profile:hover,.admin-profile.admin-active { background:#eef5f3; }
+.admin-dropdown { position:absolute; right:0; top:calc(100% + 9px); width:220px; padding:10px; background:#fff; border:1px solid var(--border); border-radius:14px; box-shadow:0 18px 45px rgba(18,52,47,.14); z-index:120; animation:adminDrop .16s ease-out; }
+@keyframes adminDrop { from{opacity:0;transform:translateY(-5px) scale(.98)} to{opacity:1;transform:translateY(0) scale(1)} }
+.admin-dropdown-head { display:flex; gap:10px; align-items:center; padding:8px 8px 11px; margin-bottom:4px; border-bottom:1px solid #edf2f1; }
+.admin-dropdown-avatar { width:35px; height:35px; display:grid; place-items:center; border-radius:10px; background:#e4f3ef; color:#166b5f; font-size:10px; font-weight:800; }
+.admin-dropdown-head strong,.admin-dropdown-head span { display:block; }
+.admin-dropdown-head strong { font-size:11px; }
+.admin-dropdown-head span { margin-top:2px; color:var(--muted); font-size:8px; }
+.admin-dropdown > button { width:100%; height:38px; display:flex; align-items:center; gap:9px; padding:0 9px; border-radius:8px; background:transparent; color:#4c6261; font-size:10px; font-weight:700; text-align:left; }
+.admin-dropdown > button:hover { background:#f0f6f4; color:var(--green); }
+.billing-machine { position:relative; display:grid; grid-template-columns:minmax(0,1.55fr) minmax(190px,.75fr); gap:0; margin-bottom:18px; min-height:230px; border-radius:18px; overflow:hidden; background:linear-gradient(135deg,#0c4a42,#166b5f 60%,#0d3d37); box-shadow:0 15px 42px rgba(11,61,55,.16); }
+.billing-machine-screen { position:relative; padding:24px 28px; color:#fff; overflow:hidden; }
+.machine-topline { display:flex; justify-content:space-between; align-items:center; font-size:9px; letter-spacing:1.4px; font-weight:800; color:#c5e4de; }
+.machine-topline b { font-size:8px; letter-spacing:.8px; color:#d8f1b8; }
+.machine-topline b i { display:inline-block; width:6px; height:6px; border-radius:50%; background:#b9df79; margin-right:5px; box-shadow:0 0 0 5px rgba(185,223,121,.08); animation:terminalPulse 1.7s infinite; }
+@keyframes terminalPulse { 50%{box-shadow:0 0 0 8px rgba(185,223,121,0)} }
+.machine-main { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-top:35px; }
+.machine-main small,.machine-main span { display:block; color:#9cc3bb; font-size:8px; letter-spacing:.9px; }
+.machine-main strong { display:block; margin:7px 0; font:800 31px Manrope,sans-serif; color:#fff; }
+.machine-main span { letter-spacing:0; }
+.machine-ring { width:122px; height:122px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(#b9df79 var(--billing-progress),rgba(255,255,255,.11) 0); box-shadow:0 0 0 1px rgba(255,255,255,.09); animation:ringFloat 3s ease-in-out infinite; }
+.machine-ring:before { content:""; position:absolute; width:92px; height:92px; border-radius:50%; background:#10564d; }
+.machine-ring > div { position:relative; z-index:1; text-align:center; }
+.machine-ring b { display:block; color:#fff; font-size:19px; }
+.machine-ring span { margin-top:2px; color:#9fc7bf; font-size:7px; }
+@keyframes ringFloat { 50%{transform:translateY(-4px) rotate(2deg)} }
+.machine-scanline { position:absolute; left:0; right:0; top:0; height:2px; background:rgba(185,223,121,.55); box-shadow:0 0 15px rgba(185,223,121,.35); animation:scan 4s linear infinite; }
+@keyframes scan { from{transform:translateY(0)} to{transform:translateY(205px)} }
+.billing-machine-receipt { position:relative; padding:25px 25px 18px; background:#f9fbfa; color:#1a2c28; display:flex; flex-direction:column; justify-content:center; clip-path:polygon(0 0,100% 0,100% 96%,96% 100%,92% 96%,88% 100%,84% 96%,80% 100%,76% 96%,72% 100%,68% 96%,64% 100%,60% 96%,56% 100%,52% 96%,48% 100%,44% 96%,40% 100%,36% 96%,32% 100%,28% 96%,24% 100%,20% 96%,16% 100%,12% 96%,8% 100%,4% 96%,0 100%); }
+.billing-machine-receipt:before { content:""; position:absolute; inset:12px; border:1px dashed #d8e3df; pointer-events:none; }
+.billing-machine-receipt > * { position:relative; z-index:1; }
+.billing-machine-receipt > span { font-size:8px; letter-spacing:1.6px; color:#81908b; font-weight:800; }
+.billing-machine-receipt > strong { margin-top:9px; font:800 18px Manrope,sans-serif; color:#166b5f; }
+.receipt-line { display:flex; gap:5px; margin:17px 0; }
+.receipt-line i { height:5px; flex:1; border-radius:4px; background:#dfe9e5; animation:receiptWave 1.6s ease-in-out infinite; }
+.receipt-line i:nth-child(2){animation-delay:.15s}.receipt-line i:nth-child(3){animation-delay:.3s}
+@keyframes receiptWave { 50%{transform:scaleY(.45);opacity:.6} }
+.billing-machine-receipt small { color:#82908b; font-size:8px; line-height:1.5; }
+.machine-status { position:absolute; bottom:12px; left:27px; color:#b9d7d0; font-size:8px; z-index:3; }
+.machine-status span { display:inline-block; width:6px; height:6px; border-radius:50%; background:#b9df79; margin-right:5px; }
+.machine-status b { color:#d8efc0; }
+.reports-chart-grid { display:grid; grid-template-columns:1.25fr .85fr; gap:17px; }
+.daily-expense-card { min-width:0; }
+.live-bars { gap:10px; }
+.animated-bar { animation:barRise .7s ease-out both; transform-origin:bottom; }
+@keyframes barRise { from{transform:scaleY(0)} to{transform:scaleY(1)} }
+.expense-bars { height:270px; margin:15px 22px 0; padding:12px 6px 0; border-bottom:1px solid var(--border); display:flex; align-items:flex-end; gap:10px; }
+.expense-bar-wrap { flex:1; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; min-width:0; }
+.expense-bar { width:min(32px,70%); min-height:4px; border-radius:7px 7px 0 0; background:linear-gradient(#d59a4e,#a96720); animation:barRise .7s ease-out both; transform-origin:bottom; }
+.expense-value { margin-bottom:5px; color:#9a6b2d; font-size:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:48px; }
+.expense-day { margin-top:8px; color:var(--muted); font-size:7px; white-space:nowrap; }
+@media(max-width:900px){ .billing-machine{grid-template-columns:1fr}.billing-machine-receipt{min-height:170px}.reports-chart-grid{grid-template-columns:1fr}.admin-dropdown{right:-4px} }
+@media(max-width:600px){ .machine-main strong{font-size:25px}.machine-ring{width:95px;height:95px}.machine-ring:before{width:72px;height:72px}.billing-machine-screen{padding:20px}.billing-machine-receipt{padding:20px}.reports-chart-grid{gap:12px} }
+
 `;
 
-const CSS = BASE_CSS + AL_KANZ_JOB_UI;
+
+
+const AL_KANZ_ANIMATED_UI = `
+/* ============================================================
+   AL KANZ — FULL ANIMATED / RESPONSIVE EXPERIENCE
+============================================================ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.app {
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 8% 5%, rgba(30,126,104,.075), transparent 28%),
+    radial-gradient(circle at 92% 18%, rgba(185,223,121,.09), transparent 26%),
+    var(--bg);
+}
+
+.app::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 25%, rgba(102,197,168,.06), transparent 22%),
+    radial-gradient(circle at 80% 70%, rgba(185,223,121,.055), transparent 24%);
+  animation: akAmbient 18s ease-in-out infinite alternate;
+}
+
+@keyframes akAmbient {
+  0% { transform: translate3d(-1%, -1%, 0) scale(1); }
+  50% { transform: translate3d(1.5%, 1%, 0) scale(1.03); }
+  100% { transform: translate3d(-.5%, 1.5%, 0) scale(1.015); }
+}
+
+/* Smooth page entrance */
+.content > * {
+  animation: akPageIn .48s cubic-bezier(.2,.8,.2,1) both;
+}
+
+@keyframes akPageIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Sidebar */
+.sidebar {
+  transition:
+    width .28s ease,
+    transform .28s cubic-bezier(.2,.8,.2,1),
+    box-shadow .28s ease;
+}
+
+.nav-item {
+  transition:
+    transform .2s ease,
+    background .2s ease,
+    color .2s ease,
+    padding .25s ease;
+}
+
+.nav-item:hover {
+  transform: translateX(3px);
+}
+
+.nav-item.selected {
+  animation: akNavPulse .35s ease-out;
+}
+
+@keyframes akNavPulse {
+  0% { transform: scale(.98); }
+  100% { transform: scale(1); }
+}
+
+.sub-menu {
+  animation: akSubMenu .24s ease-out both;
+  transform-origin: top;
+}
+
+@keyframes akSubMenu {
+  from { opacity: 0; transform: translateY(-5px) scaleY(.96); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+.chevron-open {
+  transition: transform .25s ease;
+  transform: rotate(180deg);
+}
+
+/* Top bar */
+.topbar {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: background .25s ease, box-shadow .25s ease;
+}
+
+.mobile-menu,
+.notification,
+.admin-profile {
+  transition:
+    transform .2s ease,
+    background .2s ease,
+    box-shadow .2s ease;
+}
+
+.mobile-menu:hover,
+.notification:hover,
+.admin-profile:hover {
+  transform: translateY(-1px);
+}
+
+.mobile-menu:active,
+.notification:active,
+.admin-profile:active,
+button:active {
+  transform: scale(.97);
+}
+
+/* Search */
+.global-search {
+  transition: width .25s ease, border-color .2s ease, box-shadow .2s ease;
+}
+
+.global-search:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-light);
+}
+
+/* Cards */
+.card,
+.table-card,
+.jobs-modern-card,
+.customer-card,
+.staff-card,
+.material-card,
+.account-card,
+.report-card,
+.billing-machine,
+.settings-card,
+.appearance-card {
+  transition:
+    transform .25s ease,
+    box-shadow .25s ease,
+    border-color .25s ease;
+}
+
+.card:hover,
+.customer-card:hover,
+.staff-card:hover,
+.material-card:hover,
+.report-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 35px rgba(20,55,47,.10);
+}
+
+/* Buttons */
+.primary-button,
+.secondary-button,
+.hero-actions button,
+.row-action,
+.job-action-grid button,
+.job-payment-button {
+  transition:
+    transform .2s ease,
+    box-shadow .2s ease,
+    filter .2s ease,
+    background .2s ease;
+}
+
+.primary-button:hover,
+.job-payment-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 9px 22px rgba(8,118,83,.22);
+  filter: brightness(1.04);
+}
+
+.secondary-button:hover,
+.row-action:hover,
+.job-action-grid button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(20,55,47,.10);
+}
+
+/* Animated stats */
+.stat-card {
+  animation: akCardIn .55s cubic-bezier(.2,.8,.2,1) both;
+}
+
+.stat-card:nth-child(2) { animation-delay: .06s; }
+.stat-card:nth-child(3) { animation-delay: .12s; }
+.stat-card:nth-child(4) { animation-delay: .18s; }
+
+@keyframes akCardIn {
+  from { opacity: 0; transform: translateY(16px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Number/icon micro animations */
+.stat-card svg,
+.card-header svg {
+  transition: transform .3s ease;
+}
+
+.stat-card:hover svg,
+.card:hover .card-header svg {
+  transform: scale(1.08) rotate(-3deg);
+}
+
+/* Progress */
+.progress-bar > div {
+  transform-origin: left center;
+  animation: akProgress .9s cubic-bezier(.2,.8,.2,1) both;
+}
+
+@keyframes akProgress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* Billing machine */
+.billing-machine {
+  position: relative;
+  overflow: hidden;
+  animation: akMachineIn .65s cubic-bezier(.2,.8,.2,1) both;
+}
+
+.billing-machine::before {
+  content: "";
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  right: -80px;
+  top: -90px;
+  border-radius: 50%;
+  background: var(--green-light);
+  opacity: .65;
+  animation: akMachineOrb 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes akMachineIn {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes akMachineOrb {
+  0%,100% { transform: translate(0,0) scale(1); }
+  50% { transform: translate(-25px,20px) scale(1.12); }
+}
+
+.machine-ring {
+  animation: akRingFloat 4s ease-in-out infinite;
+}
+
+@keyframes akRingFloat {
+  0%,100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-5px) rotate(2deg); }
+}
+
+.billing-machine-receipt {
+  animation: akReceipt 1.1s cubic-bezier(.2,.8,.2,1) both;
+}
+
+@keyframes akReceipt {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Charts */
+.report-chart,
+.chart-card,
+.reports-chart-card {
+  overflow: hidden;
+}
+
+.report-chart svg,
+.chart-card svg {
+  animation: akChartDraw 1.2s ease-out both;
+}
+
+@keyframes akChartDraw {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Modals / drawer */
+.modal-backdrop,
+.modal-overlay {
+  animation: akFade .2s ease-out both;
+}
+
+.modal,
+.job-drawer {
+  animation: akModalIn .3s cubic-bezier(.2,.8,.2,1) both;
+}
+
+@keyframes akFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes akModalIn {
+  from { opacity: 0; transform: translateY(18px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Admin / notifications */
+.admin-menu-wrap,
+.notification-wrap {
+  position: relative;
+}
+
+.admin-dropdown,
+.notification-popover {
+  animation: akDrop .22s cubic-bezier(.2,.8,.2,1) both;
+  transform-origin: top right;
+}
+
+@keyframes akDrop {
+  from { opacity: 0; transform: translateY(-6px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.notification-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.notification.active {
+  background: var(--green-light);
+  color: var(--green);
+}
+
+.notification-popover {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  width: 310px;
+  padding: 10px;
+  z-index: 1000;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--white);
+  color: var(--text);
+  box-shadow: 0 20px 50px rgba(0,0,0,.16);
+}
+
+.popover-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.popover-title div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.popover-title span {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: var(--green);
+}
+
+.popover-title strong {
+  font-size: 14px;
+}
+
+.popover-title button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.notification-item {
+  display: flex;
+  gap: 10px;
+  padding: 13px 8px;
+}
+
+.notification-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--green-light);
+  color: var(--green);
+}
+
+.notification-item strong {
+  display: block;
+  font-size: 12px;
+}
+
+.notification-item p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.notification-footer {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* Tables/cards on hover */
+.table-row {
+  transition: background .2s ease, transform .2s ease;
+}
+
+.table-row:hover {
+  background: var(--soft);
+}
+
+/* Touch targets */
+@media (max-width: 850px) {
+  .sidebar {
+    z-index: 50;
+  }
+
+  .sidebar-overlay {
+    z-index: 45;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: akFade .2s ease-out both;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+
+  .content {
+    min-width: 0;
+  }
+
+  .global-search {
+    min-width: 0;
+  }
+
+  .notification-popover,
+  .admin-dropdown {
+    position: fixed;
+    top: 68px;
+    right: 12px;
+    width: min(310px, calc(100vw - 24px));
+  }
+
+  .mobile-menu,
+  .notification,
+  .admin-profile {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 620px) {
+  .topbar {
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .topbar-left {
+    min-width: 40px;
+  }
+
+  .topbar-right {
+    gap: 5px;
+    margin-left: auto;
+  }
+
+  .global-search {
+    width: min(42vw, 170px);
+  }
+
+  .global-search input {
+    min-width: 0;
+  }
+
+  .content {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .page-title h1 {
+    font-size: 22px;
+  }
+
+  .page-title p {
+    max-width: 100%;
+  }
+
+  .card,
+  .table-card,
+  .jobs-modern-card,
+  .billing-machine {
+    border-radius: 13px;
+  }
+
+  .primary-button,
+  .secondary-button {
+    min-height: 44px;
+  }
+
+  .notification-popover,
+  .admin-dropdown {
+    top: 66px;
+  }
+
+  .admin-profile {
+    padding: 0 2px;
+  }
+
+  .admin-profile > div {
+    margin: 0;
+  }
+
+  /* Prevent wide tables from breaking the viewport. */
+  .table-card,
+  .jobs-modern-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-head,
+  .table-row {
+    min-width: 650px;
+  }
+
+  .jobs-modern-head,
+  .jobs-modern-row {
+    min-width: 900px;
+  }
+
+  .billing-machine {
+    width: 100%;
+  }
+}
+
+/* Respect reduced-motion accessibility preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+`;
+
+const CSS = BASE_CSS + AL_KANZ_JOB_UI + AL_KANZ_ANIMATED_UI;
+
+
+
+/* ============================================================
+   FINAL MOBILE DRAWER / RESPONSIVE OVERRIDES
+   Desktop remains unchanged. Mobile uses an overlay drawer.
+============================================================ */
+const AL_KANZ_FINAL_RESPONSIVE = `
+@media (max-width: 850px) {
+  html, body, #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-width: 0;
+  }
+
+  .app {
+    width: 100%;
+    min-width: 0;
+    display: block;
+    overflow-x: hidden;
+  }
+
+  /* Never let the desktop collapsed-sidebar mode affect mobile. */
+  .app.sidebar-collapsed .main {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+
+  .app .main {
+    width: 100% !important;
+    margin-left: 0 !important;
+    min-width: 0;
+  }
+
+  /* Real mobile drawer: it overlays the page instead of squeezing it. */
+  .app .sidebar {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(310px, 86vw) !important;
+    max-width: 86vw;
+    height: 100dvh;
+    transform: translateX(-105%) !important;
+    transition: transform .32s cubic-bezier(.22,.8,.2,1), box-shadow .32s ease !important;
+    z-index: 1001 !important;
+    box-shadow: none;
+    overflow: hidden;
+  }
+
+  .app .sidebar.sidebar-open {
+    transform: translateX(0) !important;
+    box-shadow: 22px 0 55px rgba(0,0,0,.28);
+  }
+
+  .app .sidebar-overlay {
+    display: block !important;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: rgba(0,0,0,.48) !important;
+    z-index: 1000 !important;
+    cursor: pointer;
+    animation: akOverlayIn .22s ease both;
+  }
+
+  @keyframes akOverlayIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .app .brand-area {
+    padding: 22px 17px 17px !important;
+    flex: 0 0 auto;
+  }
+
+  .app .nav-scroll {
+    min-height: 0;
+    padding: 20px 12px 25px !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app .sidebar-account {
+    flex: 0 0 auto;
+    padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .app .mobile-close {
+    display: grid !important;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    color: #fff;
+    background: rgba(255,255,255,.07);
+    position: absolute;
+    right: 14px;
+    top: 18px;
+  }
+
+  .app .mobile-close:hover {
+    background: rgba(255,255,255,.14);
+  }
+
+  .app .brand {
+    padding-right: 48px;
+  }
+
+  .app .nav-item {
+    min-height: 46px;
+    font-size: 12px;
+  }
+
+  .app .sub-menu {
+    padding-left: 42px;
+    padding-bottom: 7px;
+  }
+
+  .app .sub-menu button {
+    min-height: 38px;
+    height: 38px;
+    font-size: 11px;
+  }
+
+  /* Mobile topbar */
+  .app .topbar {
+    width: 100%;
+    max-width: 100%;
+    height: 64px;
+    padding: 0 12px;
+    gap: 7px;
+    overflow: visible;
+  }
+
+  .app .topbar-left {
+    min-width: 40px;
+    flex: 0 0 auto;
+  }
+
+  .app .mobile-menu {
+    display: grid !important;
+    place-items: center;
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px;
+    min-height: 42px;
+    margin: 0 !important;
+    border-radius: 11px;
+    background: var(--green-light) !important;
+    color: var(--green) !important;
+  }
+
+  .app .topbar-right {
+    min-width: 0;
+    flex: 1;
+    justify-content: flex-end;
+    gap: 5px;
+  }
+
+  .app .global-search {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0;
+    max-width: 190px;
+    height: 40px;
+  }
+
+  .app .global-search input {
+    min-width: 0;
+    font-size: 11px;
+  }
+
+  .app .global-search kbd {
+    display: none;
+  }
+
+  .app .notification {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+  }
+
+  .app .admin-profile {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    padding: 0 !important;
+    justify-content: center;
+  }
+
+  .app .admin-profile > div {
+    width: 34px;
+    height: 34px;
+  }
+
+  .app .admin-profile section,
+  .app .admin-profile > svg {
+    display: none !important;
+  }
+
+  .app .content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 20px 14px 50px !important;
+    overflow-x: hidden;
+  }
+
+  /* Stack common layouts cleanly on phones. */
+  .app .stats,
+  .app .report-grid,
+  .app .customer-grid,
+  .app .staff-grid,
+  .app .account-overview,
+  .app .material-grid,
+  .app .two-column,
+  .app .report-layout,
+  .app .reports-chart-grid,
+  .app .billing-machine,
+  .app .settings-layout {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .app .stats,
+  .app .report-grid,
+  .app .customer-grid,
+  .app .staff-grid,
+  .app .account-overview,
+  .app .material-grid,
+  .app .reports-chart-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .app .two-column,
+  .app .billing-machine,
+  .app .settings-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .app .hero {
+    width: 100%;
+    min-width: 0;
+    padding: 22px !important;
+  }
+
+  .app .hero-visual {
+    display: none !important;
+  }
+
+  .app .hero-text {
+    width: 100%;
+  }
+
+  .app .hero-text h2 {
+    font-size: clamp(22px, 7vw, 30px);
+    line-height: 1.12;
+  }
+
+  .app .hero-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .app .hero-actions button,
+  .app .page-heading button,
+  .app .page-title button {
+    min-height: 44px;
+  }
+
+  /* Keep wide tables usable by scrolling only the table area. */
+  .app .table-card,
+  .app .jobs-modern-card {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app .table-card > *,
+  .app .jobs-modern-card > * {
+    min-width: 620px;
+  }
+
+  /* Drawers/modals fit inside a phone. */
+  .app .modal,
+  .app .job-drawer {
+    width: min(94vw, 680px) !important;
+    max-width: 94vw !important;
+    max-height: 90dvh;
+    overflow-y: auto;
+  }
+
+  .app .modal-grid,
+  .app .settings-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .app .modal-footer {
+    flex-wrap: wrap;
+  }
+
+  .app .modal-footer button {
+    flex: 1 1 130px;
+    min-height: 42px;
+  }
+
+  /* Popovers remain inside the viewport. */
+  .app .notification-popover,
+  .app .admin-dropdown {
+    position: fixed !important;
+    top: 70px !important;
+    right: 10px !important;
+    left: auto !important;
+    width: min(320px, calc(100vw - 20px)) !important;
+    max-width: calc(100vw - 20px);
+    z-index: 1200 !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .app .global-search {
+    max-width: 145px;
+  }
+
+  .app .content {
+    padding-left: 11px !important;
+    padding-right: 11px !important;
+  }
+
+  .app .page-heading h1,
+  .app .page-title h1 {
+    font-size: 22px;
+  }
+
+  .app .hero {
+    padding: 19px !important;
+  }
+}
+
+@media (min-width: 851px) {
+  /* Desktop stays a true desktop layout. */
+  .app .sidebar {
+    transform: none;
+  }
+
+  .app .sidebar-overlay {
+    display: none !important;
+  }
+}
+`;
+
+
+
+const AL_KANZ_FINAL_FIX = `
+html, body, #root { width:100%; min-width:0; margin:0; }
+.app { width:100%; min-width:0; overflow-x:hidden; }
+.main, .content { min-width:0; }
+.nav-item { position:relative; }
+
+/* BILLING: bill -> wave letters -> printer -> paper */
+.bill-create-panel { display:flex; flex-direction:column; align-items:flex-start; }
+.create-bill-button { margin-top:14px; min-height:40px; padding:0 14px; border:0; border-radius:10px; display:inline-flex; align-items:center; gap:8px; background:#b9df79; color:#17483f; font-size:11px; font-weight:900; cursor:pointer; box-shadow:0 7px 18px rgba(185,223,121,.16); transition:transform .2s ease, box-shadow .2s ease; }
+.create-bill-button:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(185,223,121,.25); }
+.create-bill-button:active { transform:scale(.96); }
+.billing-transfer-animation { position:absolute; left:28px; right:28px; bottom:21px; height:48px; display:flex; align-items:center; gap:12px; pointer-events:none; z-index:4; }
+.bill-source { width:54px; flex:0 0 54px; display:flex; align-items:center; gap:5px; color:#d9efe9; font-size:7px; font-weight:900; letter-spacing:1px; }
+.bill-paper-icon { width:32px; height:32px; border-radius:8px; display:grid; place-items:center; background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.12); }
+.wave-track { position:relative; height:42px; flex:1; display:flex; align-items:center; justify-content:space-around; overflow:visible; }
+.wave-track:before { content:""; position:absolute; left:0; right:0; top:50%; height:2px; background:repeating-linear-gradient(90deg,rgba(185,223,121,.18) 0 7px,transparent 7px 13px); transform:translateY(-50%); }
+.wave-track span { position:relative; z-index:2; width:22px; height:22px; display:grid; place-items:center; border-radius:50%; color:#b9df79; background:#0d4c43; border:1px solid rgba(185,223,121,.45); font-size:8px; font-weight:900; opacity:.55; }
+.billing-machine.is-printing .wave-track span { animation:billingWaveTravel 1.25s cubic-bezier(.2,.75,.25,1) infinite; animation-delay:var(--wave-delay); }
+@keyframes billingWaveTravel { 0%{transform:translate3d(-28px,13px,0) scale(.72);opacity:0} 18%{opacity:1} 45%{transform:translate3d(0,-11px,0) scale(1.08)} 70%{transform:translate3d(22px,10px,0) scale(.95)} 100%{transform:translate3d(42px,0,0) scale(.65);opacity:0} }
+.printer-icon { position:relative; width:43px; height:34px; flex:0 0 43px; border-radius:8px; display:grid; place-items:center; color:#dff4ed; background:#0b3934; border:1px solid rgba(255,255,255,.15); }
+.printer-icon i { position:absolute; bottom:-3px; width:22px; height:4px; border-radius:2px; background:#b9df79; opacity:.7; }
+.billing-machine.is-printing .printer-icon { animation:printerShake .45s ease-in-out infinite alternate; }
+@keyframes printerShake { from{transform:translateY(0) rotate(-1deg)} to{transform:translateY(-2px) rotate(1deg)} }
+.receipt-printer { position:relative; margin:-2px auto 13px; width:min(220px,90%); height:88px; border-radius:12px 12px 8px 8px; background:#e7efec; border:1px solid #d2dfda; overflow:hidden; box-shadow:inset 0 -5px 0 rgba(23,69,62,.05); }
+.printer-top { height:30px; display:flex; align-items:center; justify-content:center; gap:6px; color:#55706a; font-size:7px; font-weight:900; letter-spacing:1px; }
+.printer-light { width:6px; height:6px; border-radius:50%; background:#62b993; box-shadow:0 0 0 4px rgba(98,185,147,.10); }
+.printer-slot { position:absolute; left:25px; right:25px; top:29px; height:7px; border-radius:4px; background:#7f928c; overflow:visible; }
+.printed-paper { position:absolute; left:10px; right:10px; top:2px; height:0; padding:0 10px; overflow:hidden; background:#fff; border:1px solid #d9e3df; border-radius:0 0 4px 4px; display:flex; flex-direction:column; align-items:center; color:#36524b; font-size:6px; }
+.printed-paper strong { margin-top:8px; font-size:8px; color:#166b5f; }
+.printed-paper span { margin-top:2px; font-size:5px; letter-spacing:.6px; }
+.printed-paper i { width:75%; height:1px; margin:5px 0; background:#dce7e3; }
+.printed-paper small { font-size:5px; color:#82908b; }
+.printed-paper b { margin-top:3px; font-size:7px; color:#263b35; }
+.billing-machine.is-printing .printed-paper { animation:paperRollOut 2.6s cubic-bezier(.18,.7,.2,1) .75s forwards; }
+@keyframes paperRollOut { 0%{height:0;padding-top:0;padding-bottom:0;transform:translateY(0)} 45%{height:45px;padding-top:2px;padding-bottom:2px} 100%{height:75px;padding-top:4px;padding-bottom:4px;transform:translateY(0)} }
+.receipt-caption { font-size:8px !important; letter-spacing:1.6px; }
+.billing-machine.is-printing .receipt-line i { animation-duration:.55s; }
+
+/* Mobile = real slide-in drawer, never a squeezed desktop sidebar */
+@media (max-width:850px) {
+  .app { display:block; }
+  .main { width:100% !important; margin-left:0 !important; }
+  .sidebar { position:fixed !important; left:0 !important; top:0 !important; bottom:0 !important; width:min(300px,86vw) !important; max-width:300px !important; height:100% !important; transform:translate3d(-105%,0,0) !important; z-index:1000 !important; box-shadow:18px 0 55px rgba(0,0,0,.28) !important; transition:transform .32s cubic-bezier(.2,.8,.2,1) !important; }
+  .sidebar.sidebar-open { transform:translate3d(0,0,0) !important; }
+  .sidebar-overlay { position:fixed !important; inset:0 !important; width:100% !important; height:100% !important; display:block !important; z-index:999 !important; background:rgba(3,18,15,.52) !important; backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+  .mobile-menu { display:grid !important; width:42px !important; height:42px !important; flex:0 0 42px; place-items:center; border-radius:11px !important; background:var(--soft) !important; color:var(--text) !important; }
+  .topbar { position:sticky; top:0; z-index:80; }
+  .topbar-left,.topbar-right { min-width:0; }
+  .global-search { max-width:min(42vw,220px); }
+  .content { width:100% !important; max-width:100% !important; padding:20px 14px 45px !important; box-sizing:border-box; }
+  .breadcrumb span { display:none; }
+  .admin-profile section { display:none !important; }
+  .admin-profile { min-width:42px; height:42px; display:flex; align-items:center; justify-content:center; }
+  .notification { width:42px !important; height:42px !important; }
+  .notification-popover,.admin-dropdown { position:fixed !important; top:70px !important; right:12px !important; width:min(300px,calc(100vw - 24px)) !important; max-width:calc(100vw - 24px) !important; z-index:1200 !important; }
+  .sub-menu { padding-left:34px; }
+  .billing-machine { grid-template-columns:1fr !important; min-height:auto; }
+  .billing-machine-screen { min-height:300px; }
+  .billing-transfer-animation { left:18px; right:18px; bottom:16px; }
+  .billing-machine-receipt { min-height:225px !important; padding:20px !important; }
+  .receipt-printer { width:min(220px,80%); }
+  .stats,.billing-stats,.report-grid,.customer-grid,.staff-grid,.two-column,.reports-chart-grid { grid-template-columns:1fr !important; }
+  .page-title,.page-heading { flex-wrap:wrap; }
+  .page-title button,.page-heading button,.jobs-new-button { width:100%; justify-content:center; }
+  .table-card { overflow-x:auto; }
+  .table-head,.table-row { min-width:760px; }
+  .job-drawer { width:100% !important; }
+}
+@media (max-width:480px) {
+  .content { padding-left:11px !important; padding-right:11px !important; }
+  .global-search { max-width:38vw !important; }
+  .global-search kbd { display:none; }
+  .billing-machine-screen { padding:19px !important; }
+  .billing-transfer-animation { gap:5px; }
+  .bill-source { width:43px; flex-basis:43px; }
+  .wave-track span { width:18px; height:18px; font-size:7px; }
+  .printer-icon { width:37px; flex-basis:37px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .billing-machine.is-printing .wave-track span,.billing-machine.is-printing .printer-icon,.billing-machine.is-printing .printed-paper,.content > * { animation:none !important; }
+  .printed-paper { height:75px; padding:4px 10px; }
+}
+`;
+
+const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX;
 
 export default App;

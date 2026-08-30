@@ -1387,3 +1387,199 @@ button {
     grid-column: auto;
   }
 }
+/* ============================================================
+   FULL DARK THEME
+============================================================ */
+
+.app.theme-dark {
+  --bg: #071411;
+  --white: #0d1f1a;
+  --soft: #10251f;
+  --green: #67c5a8;
+  --green-light: #153b31;
+  --text: #edf7f3;
+  --text-2: #c2d3cc;
+  --muted: #8fa69d;
+  --border: #25423a;
+  --shadow: 0 8px 24px rgba(0,0,0,.28);
+
+  background: #071411;
+  color: #edf7f3;
+}
+
+/* Whole application */
+.app.theme-dark,
+.app.theme-dark .main,
+.app.theme-dark .content,
+.app.theme-dark .page,
+.app.theme-dark main {
+  background: #071411;
+  color: #edf7f3;
+}
+
+/* Sidebar */
+.app.theme-dark .sidebar,
+.app.theme-dark .sidebar-inner {
+  background: #091b17;
+  color: #edf7f3;
+  border-color: #203b34;
+}
+
+/* Navigation */
+.app.theme-dark .nav-item,
+.app.theme-dark .sub-menu button {
+  color: #b9cbc4;
+  background: transparent;
+}
+
+.app.theme-dark .nav-item:hover,
+.app.theme-dark .sub-menu button:hover {
+  background: #15352d;
+  color: #67c5a8;
+}
+
+.app.theme-dark .nav-item.selected,
+.app.theme-dark .sub-menu button.active {
+  background: #174338;
+  color: #67c5a8;
+}
+
+/* Cards */
+.app.theme-dark .card,
+.app.theme-dark .table-card,
+.app.theme-dark .settings-menu,
+.app.theme-dark .settings-card,
+.app.theme-dark .appearance-card {
+  background: #0d1f1a;
+  color: #edf7f3;
+  border-color: #25423a;
+}
+
+/* Headers */
+.app.theme-dark .page-title h1,
+.app.theme-dark .page-title p,
+.app.theme-dark .card h2,
+.app.theme-dark .card-header,
+.app.theme-dark .card-header h2 {
+  color: #edf7f3;
+}
+
+.app.theme-dark .page-title p,
+.app.theme-dark .card-header p {
+  color: #8fa69d;
+}
+
+/* Inputs */
+.app.theme-dark input,
+.app.theme-dark select,
+.app.theme-dark textarea,
+.app.theme-dark .global-search,
+.app.theme-dark .jobs-search-modern,
+.app.theme-dark .jobs-status-filter {
+  background: #10251f;
+  color: #edf7f3;
+  border-color: #2b4a41;
+}
+
+.app.theme-dark input::placeholder,
+.app.theme-dark textarea::placeholder {
+  color: #718980;
+}
+
+/* Tables */
+.app.theme-dark .table-head {
+  background: #10251f;
+  color: #8fa69d;
+  border-color: #25423a;
+}
+
+.app.theme-dark .table-row {
+  background: #0d1f1a;
+  color: #c9d8d2;
+  border-color: #203b34;
+}
+
+.app.theme-dark .table-row:hover {
+  background: #122a23;
+}
+
+/* Settings menu */
+.app.theme-dark .settings-menu {
+  background: #0d1f1a;
+}
+
+.app.theme-dark .settings-menu button {
+  color: #b9cbc4;
+}
+
+.app.theme-dark .settings-menu button.active,
+.app.theme-dark .settings-menu button:hover {
+  background: #153b31;
+  color: #67c5a8;
+}
+
+/* Theme selection cards */
+.app.theme-dark .theme-option {
+  background: #10251f;
+  color: #edf7f3;
+  border-color: #2b4a41;
+}
+
+.app.theme-dark .theme-option:hover,
+.app.theme-dark .theme-option.active {
+  background: #153b31;
+  border-color: #67c5a8;
+}
+
+/* Job section */
+.app.theme-dark .jobs-modern-card,
+.app.theme-dark .job-detail-box,
+.app.theme-dark .job-payment-form,
+.app.theme-dark .job-form-summary {
+  background: #0d1f1a;
+  color: #edf7f3;
+  border-color: #25423a;
+}
+
+.app.theme-dark .job-payment-input {
+  background: #10251f;
+  border-color: #2b4a41;
+}
+
+.app.theme-dark .job-payment-input input {
+  background: transparent;
+  color: #edf7f3;
+}
+
+/* Buttons that were hardcoded white */
+.app.theme-dark button:not(.primary-button):not(.nav-item) {
+  color: #c9d8d2;
+}
+
+/* Remove remaining white page backgrounds */
+.app.theme-dark .modal,
+.app.theme-dark .modal-content,
+.app.theme-dark .drawer,
+.app.theme-dark .job-drawer {
+  background: #0d1f1a;
+  color: #edf7f3;
+}
+
+/* Dark scrollbar */
+.app.theme-dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.app.theme-dark ::-webkit-scrollbar-track {
+  background: #071411;
+}
+
+.app.theme-dark ::-webkit-scrollbar-thumb {
+  background: #25423a;
+  border-radius: 10px;
+}
+
+.app.theme-dark ::-webkit-scrollbar-thumb:hover {
+  background: #376256;
+}
