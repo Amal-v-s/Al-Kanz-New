@@ -467,11 +467,8 @@ const NAVIGATION = [
   {
     section: "BILLING",
     items: [
-      {
-        name: "Billing",
-        icon: Receipt,
-        children: ["Main", "Transactions", "Invoices", "Payments"],
-      },
+      { name: "Billing", icon: Receipt, children: ["Main", "Transactions", "Invoices", "Payments"] },
+      { name: "Quotations", icon: FileText, children: ["New Quotation", "All Quotations"] },
     ],
   },
   {
@@ -621,6 +618,7 @@ function App() {
   const [search, setSearch] = useState("");
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [quotations, setQuotations] = useState(() => safeParse(localStorage.getItem("al-kanz-quotations"), []));
 
   useEffect(() => {
     const local = loadLocalData();
@@ -673,6 +671,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem("al-kanz-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("al-kanz-quotations", JSON.stringify(quotations));
+  }, [quotations]);
 
   const totalSales = jobs.reduce(
   (a, b) => a + Number(b.amount || 0),
@@ -1232,6 +1234,15 @@ const netCash = totalPaid - totalExpenses;
 
             {page === "Staff" && (
               <StaffPage staff={staff} setStaff={setStaff} setModal={setModal} />
+            )}
+
+            {(page === "New Quotation" || page === "All Quotations" || page === "Quotations") && (
+              <QuotationPage
+                page={page}
+                quotations={quotations}
+                setQuotations={setQuotations}
+                jobs={jobs}
+              />
             )}
 
             {(page === "Billing" ||
@@ -2483,14 +2494,10 @@ function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, record
                 <div><b>{Math.round(collectedPercent)}%</b><span>collected</span></div>
               </div>
             </div>
-            <div className="billing-transfer-animation" aria-hidden="true">
-              <div className="bill-source"><div className="bill-paper-icon"><FileText size={18} /></div><span>BILL</span></div>
-              <div className="wave-track">
-                {["B","I","L","L","I","N","G"].map((letter, index) => (
-                  <span key={`${letter}-${index}`} style={{ "--wave-delay": `${index * 0.12}s` }}>{letter}</span>
-                ))}
-              </div>
-              <div className="printer-icon"><Printer size={25} /><i /></div>
+            <div className="billing-transfer-animation-v2" aria-hidden="true">
+              <div className="bill-source-v2"><FileText size={18}/><span>CREATE BILL</span></div>
+              <div className="data-stream-v2"><i/><i/><i/><i/><i/><i/></div>
+              <div className="printer-icon-v2"><Printer size={24}/><span>PRINTER</span></div>
             </div>
             <div className="machine-scanline" />
           </div>
@@ -2796,104 +2803,139 @@ function AccountsPage({ page, totalPaid, outstanding, expenses = [], setExpenses
 ============================================================ */
 
 function SettingsPage({ page, theme, setTheme }) {
-  return (
-    <>
-      <PageTitle
-        eyebrow="SYSTEM"
-        title={page}
-        subtitle="Manage your workshop account and security."
-      />
+  const [activeTab, setActiveTab] = useState(page === "Audit & Security" ? "audit" : "profile");
+  const [profile, setProfile] = useState(() => safeParse(localStorage.getItem("al-kanz-profile"), {
+    name: "Al Kanz Admin", email: "admin@alkanzupholstery.com", phone: "+971 50 000 0000", role: "Owner"
+  }));
+  const [workshop, setWorkshop] = useState(() => safeParse(localStorage.getItem("al-kanz-workshop"), {
+    name: "Al Kanz Upholstery", location: "Dubai, UAE", phone: "+971 50 000 0000", email: "admin@alkanzupholstery.com"
+  }));
+  const [notifications, setNotifications] = useState(() => safeParse(localStorage.getItem("al-kanz-notifications"), {
+    jobs: true, payments: true, stock: true, daily: false
+  }));
+  const [message, setMessage] = useState("");
 
-      <div className="settings-layout">
-        <div className="settings-menu">
-          <button className="active">
-            <UserCog size={17} />
-            User Profile
-          </button>
-          <button>
-            <Settings size={17} />
-            Workshop Settings
-          </button>
-          <button>
-            <Bell size={17} />
-            Notifications
-          </button>
-          <button>
-            <ShieldCheck size={17} />
-            Security
-          </button>
-          <button>
-            <Lock size={17} />
-            Password
-          </button>
-        </div>
+  const save = (key, value, text) => {
+    localStorage.setItem(key, JSON.stringify(value));
+    setMessage(text);
+    window.setTimeout(() => setMessage(""), 1800);
+  };
 
-        <div className="card settings-card">
-          <CardHeader
-            eyebrow="PROFILE"
-            title="User information"
-            subtitle="Update your account details."
-          />
-          <div className="settings-form">
-            <label>
-              Full name
-              <input value="Al Kanz Admin" readOnly />
-            </label>
-            <label>
-              Email
-              <input value="admin@alkanzupholstery.com" readOnly />
-            </label>
-            <label>
-              Phone
-              <input value="+971 50 000 0000" readOnly />
-            </label>
-            <label>
-              Role
-              <input value="Owner" readOnly />
-            </label>
-            <button className="primary-button">
-              <Save size={16} />
-              Save Changes
-            </button>
-          </div>
-        </div>
+  const tabs = [
+    ["profile", "User Profile", UserCog],
+    ["workshop", "Workshop Settings", Settings],
+    ["notifications", "Notifications", Bell],
+    ["security", "Security", ShieldCheck],
+    ["password", "Password", Lock],
+    ["audit", "Audit & Security", ShieldCheck],
+  ];
 
-        <div className="card appearance-card">
-          <CardHeader
-            eyebrow="APPEARANCE"
-            title="Choose your theme"
-            subtitle="Switch between the default, light, and dark workspace."
-          />
-          <div className="theme-options">
-            <button
-              className={`theme-option ${theme === "default" ? "active" : ""}`}
-              onClick={() => setTheme("default")}
-            >
-              <span className="theme-preview theme-preview-default" />
-              <div><strong>Default</strong><small>Al Kanz green</small></div>
-              {theme === "default" && <CheckCircle2 size={17} />}
-            </button>
-            <button
-              className={`theme-option ${theme === "light" ? "active" : ""}`}
-              onClick={() => setTheme("light")}
-            >
-              <span className="theme-preview theme-preview-light" />
-              <div><strong>Light</strong><small>Bright workspace</small></div>
-              {theme === "light" && <CheckCircle2 size={17} />}
-            </button>
-            <button
-              className={`theme-option ${theme === "dark" ? "active" : ""}`}
-              onClick={() => setTheme("dark")}
-            >
-              <span className="theme-preview theme-preview-dark" />
-              <div><strong>Dark</strong><small>Easy on the eyes</small></div>
-              {theme === "dark" && <CheckCircle2 size={17} />}
-            </button>
-          </div>
-        </div>
+  return <>
+    <PageTitle eyebrow="SYSTEM" title={page} subtitle="Manage your workshop account, security and preferences." />
+    <div className="settings-layout">
+      <div className="settings-menu">
+        {tabs.map(([id,label,Icon]) => <button type="button" key={id} className={activeTab === id ? "active" : ""} onClick={() => setActiveTab(id)}><Icon size={17}/><span>{label}</span></button>)}
       </div>
-    </>
-  );
+
+      {activeTab === "profile" && <div className="card settings-card">
+        <CardHeader eyebrow="PROFILE" title="User information" subtitle="Update your administrator details." />
+        <div className="settings-form">
+          <label>Full name<input value={profile.name} onChange={e=>setProfile({...profile,name:e.target.value})}/></label>
+          <label>Email<input type="email" value={profile.email} onChange={e=>setProfile({...profile,email:e.target.value})}/></label>
+          <label>Phone<input value={profile.phone} onChange={e=>setProfile({...profile,phone:e.target.value})}/></label>
+          <label>Role<input value={profile.role} readOnly/></label>
+          <div className="settings-form-actions"><button type="button" className="primary-button" onClick={()=>save("al-kanz-profile",profile,"Profile saved successfully")}><Save size={16}/>Save Changes</button></div>
+        </div>
+      </div>}
+
+      {activeTab === "workshop" && <div className="card settings-card">
+        <CardHeader eyebrow="WORKSHOP" title="Workshop Settings" subtitle="Manage your workshop information." />
+        <div className="settings-form">
+          <label>Workshop Name<input value={workshop.name} onChange={e=>setWorkshop({...workshop,name:e.target.value})}/></label>
+          <label>Location<input value={workshop.location} onChange={e=>setWorkshop({...workshop,location:e.target.value})}/></label>
+          <label>Phone<input value={workshop.phone} onChange={e=>setWorkshop({...workshop,phone:e.target.value})}/></label>
+          <label>Email<input value={workshop.email} onChange={e=>setWorkshop({...workshop,email:e.target.value})}/></label>
+          <label>Currency<input value="AED — UAE Dirham" readOnly/></label>
+          <label>Time Zone<input value="Asia/Dubai — GMT+4" readOnly/></label>
+          <div className="settings-form-actions"><button type="button" className="primary-button" onClick={()=>save("al-kanz-workshop",workshop,"Workshop settings saved")}><Save size={16}/>Save Workshop Settings</button></div>
+        </div>
+      </div>}
+
+      {activeTab === "notifications" && <div className="card settings-card">
+        <CardHeader eyebrow="UPDATES" title="Notifications" subtitle="Choose which workshop notifications you receive." />
+        <div className="settings-options">
+          <NotificationSetting title="Job Updates" description="Notify me when repair jobs change status." checked={notifications.jobs} onChange={()=>{const n={...notifications,jobs:!notifications.jobs};setNotifications(n);save("al-kanz-notifications",n,"Notification settings updated")}}/>
+          <NotificationSetting title="Payment Alerts" description="Notify me when customer payments are recorded." checked={notifications.payments} onChange={()=>{const n={...notifications,payments:!notifications.payments};setNotifications(n);save("al-kanz-notifications",n,"Notification settings updated")}}/>
+          <NotificationSetting title="Low Stock Alerts" description="Notify me when workshop materials are running low." checked={notifications.stock} onChange={()=>{const n={...notifications,stock:!notifications.stock};setNotifications(n);save("al-kanz-notifications",n,"Notification settings updated")}}/>
+          <NotificationSetting title="Daily Summary" description="Receive a daily workshop summary." checked={notifications.daily} onChange={()=>{const n={...notifications,daily:!notifications.daily};setNotifications(n);save("al-kanz-notifications",n,"Notification settings updated")}}/>
+        </div>
+      </div>}
+
+      {activeTab === "security" && <div className="card settings-card">
+        <CardHeader eyebrow="SECURITY" title="Account Security" subtitle="Protection settings for the administrator account." />
+        <div className="settings-options">
+          <div className="security-row"><div className="security-icon"><ShieldCheck size={20}/></div><div className="security-info"><strong>Account protection</strong><small>Administrator access is protected by the configured authentication system.</small></div><span className="security-status">Active</span></div>
+          <div className="security-row"><div className="security-icon"><Lock size={20}/></div><div className="security-info"><strong>Session security</strong><small>Current browser session and access controls.</small></div><span className="security-status">Active</span></div>
+        </div>
+      </div>}
+
+      {activeTab === "password" && <div className="card settings-card">
+        <CardHeader eyebrow="ACCOUNT" title="Password" subtitle="Password changes should be handled by your authentication provider." />
+        <div className="settings-form">
+          <label>Current Password<input type="password" placeholder="Current password"/></label>
+          <label>New Password<input type="password" placeholder="New password"/></label>
+          <label>Confirm Password<input type="password" placeholder="Confirm password"/></label>
+          <div className="settings-form-actions"><button type="button" className="primary-button" onClick={()=>alert("Connect this action to your Appwrite authentication password-update flow.")}><Lock size={16}/>Update Password</button></div>
+        </div>
+      </div>}
+
+      {activeTab === "audit" && <div className="card settings-card">
+        <CardHeader eyebrow="AUDIT & SECURITY" title="Activity & security log" subtitle="Review important actions performed in the workshop system." />
+        <div className="settings-options">
+          <div className="security-row"><div className="security-icon"><ShieldCheck size={20}/></div><div className="security-info"><strong>Audit trail</strong><small>Records actions such as creating jobs, customers, suppliers, staff and recording payments.</small></div><span className="security-status">Logging</span></div>
+          <div className="audit-demo-list"><div><strong>What is the difference?</strong><p><b>Security</b> protects the account and controls access. <b>Audit & Security</b> records and reviews who did what and when, so activity can be traced.</p></div></div>
+        </div>
+      </div>}
+
+      {activeTab === "profile" && <div className="card appearance-card">
+        <CardHeader eyebrow="APPEARANCE" title="Choose your theme" subtitle="Default keeps the Al Kanz look; Dark changes the complete workspace." />
+        <div className="theme-options">
+          {["default","light","dark"].map(t=><button type="button" key={t} className={`theme-option ${theme===t?"active":""}`} onClick={()=>setTheme(t)}><span className={`theme-preview theme-preview-${t}`}/><div><strong>{t[0].toUpperCase()+t.slice(1)}</strong><small>{t==="default"?"Al Kanz green":t==="light"?"Bright workspace":"Full dark workspace"}</small></div>{theme===t&&<CheckCircle2 size={17}/>}</button>)}
+        </div>
+      </div>}
+    </div>
+    {message && <div className="settings-save-message"><CheckCircle2 size={16}/>{message}</div>}
+  </>;
+}
+
+function NotificationSetting({ title, description, checked, onChange }) {
+  return <button type="button" className="notification-setting" onClick={onChange}>
+    <div className="notification-setting-info"><strong>{title}</strong><small>{description}</small></div>
+    <span className={`toggle ${checked ? "on" : ""}`}><span/></span>
+  </button>;
+}
+
+function QuotationPage({ page, quotations, setQuotations, jobs }) {
+  const [form, setForm] = useState({customer:"",phone:"",item:"",description:"",amount:"",validity:"30 days"});
+  const [showForm, setShowForm] = useState(page === "New Quotation");
+  const save = () => {
+    if (!form.customer || !form.item || !form.amount) { alert("Customer, item and amount are required."); return; }
+    const q={id:`QT-${String(Date.now()).slice(-6)}`,...form,amount:Number(form.amount),status:"Draft",date:new Date().toLocaleDateString("en-AE")};
+    setQuotations(prev=>[q,...prev]); setForm({customer:"",phone:"",item:"",description:"",amount:"",validity:"30 days"}); setShowForm(false);
+  };
+  return <>
+    <PageTitle eyebrow="SALES · UAE" title={page === "New Quotation" ? "New Quotation" : "Quotations"} subtitle="Prepare customer quotations in AED before converting approved work into a repair job." button={!showForm ? "New Quotation" : null} onClick={()=>setShowForm(true)} />
+    {showForm && <div className="card quotation-form-card"><CardHeader eyebrow="DEMO QUOTATION" title="Create customer quotation" subtitle="For demonstration purposes — prices are editable."/><div className="settings-form">
+      <label>Customer<input value={form.customer} onChange={e=>setForm({...form,customer:e.target.value})} placeholder="Customer name"/></label>
+      <label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+971..."/></label>
+      <label>Item / Vehicle<input value={form.item} onChange={e=>setForm({...form,item:e.target.value})} placeholder="Sofa, car seat, etc."/></label>
+      <label>Amount (AED)<input type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0.00"/></label>
+      <label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label>
+      <label>Description<input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Work included..."/></label>
+      <div className="settings-form-actions"><button type="button" className="primary-button" onClick={save}><Save size={16}/> Save Quotation</button><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button></div>
+    </div></div>}
+    {!showForm && <div className="table-card"><div className="table-head"><span>QUOTE</span><span>CUSTOMER</span><span>ITEM</span><span>AMOUNT</span><span>STATUS</span></div>{quotations.length===0?<div className="empty-state">No quotations yet. Create your first demo quotation.</div>:quotations.map(q=><div className="table-row" key={q.id}><strong>{q.id}</strong><span>{q.customer}</span><span>{q.item}</span><strong>{money(q.amount)}</strong><Status status={q.status}/></div>)}</div>}
+  </>;
 }
 
 /* ============================================================
@@ -6933,6 +6975,46 @@ html, body, #root { width:100%; min-width:0; margin:0; }
 }
 `;
 
-const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX;
+const AL_KANZ_LAST_FIX = `
+/* LAST UI FIXES */
+.app.theme-dark, .app.theme-dark .main, .app.theme-dark .content { background:#0b1211; color:#edf5f2; }
+.app.theme-dark .topbar { background:#101a18 !important; border-color:#263633 !important; }
+.app.theme-dark .sidebar { background:#071512 !important; }
+.app.theme-dark .settings-menu, .app.theme-dark .card, .app.theme-dark .table-card, .app.theme-dark .modal, .app.theme-dark .job-drawer, .app.theme-dark .jobs-modern-card, .app.theme-dark .appearance-card { background:#151f1d !important; border-color:#2b3a37 !important; color:#edf5f2 !important; }
+.app.theme-dark input, .app.theme-dark select, .app.theme-dark textarea, .app.theme-dark .global-search, .app.theme-dark .jobs-search-modern, .app.theme-dark .jobs-status-filter { background:#0f1816 !important; color:#edf5f2 !important; border-color:#30413d !important; }
+.app.theme-dark .settings-menu button { color:#aabcb7 !important; }
+.app.theme-dark .settings-menu button.active, .app.theme-dark .settings-menu button:hover { background:#183b33 !important; color:#79d0b0 !important; }
+.app.theme-dark .table-head, .app.theme-dark .table-row { border-color:#293936 !important; }
+.app.theme-dark .table-row:hover { background:#172522 !important; }
+.app.theme-dark .page-title h1, .app.theme-dark .page-heading h1, .app.theme-dark h1, .app.theme-dark h2, .app.theme-dark h3 { color:#edf5f2; }
+.app.theme-dark .page-title p, .app.theme-dark .card-header p, .app.theme-dark small { color:#8fa39e; }
+.settings-form-actions { grid-column:1 / -1; display:flex; gap:10px; }
+.settings-options { padding:0 21px 25px; display:flex; flex-direction:column; gap:12px; }
+.notification-setting { width:100%; border:1px solid var(--border); background:var(--white); color:var(--text); border-radius:12px; padding:15px; display:flex; align-items:center; justify-content:space-between; text-align:left; cursor:pointer; }
+.notification-setting-info strong,.notification-setting-info small { display:block; }
+.notification-setting-info small { margin-top:4px; color:var(--text-2); font-size:9px; }
+.toggle { width:42px; height:24px; border-radius:99px; background:#ccd5d2; padding:3px; display:flex; align-items:center; }
+.toggle span { width:18px; height:18px; border-radius:50%; background:#fff; transition:.2s; }
+.toggle.on { background:var(--green); }.toggle.on span { transform:translateX(18px); }
+.security-row { min-height:65px; padding:14px; border:1px solid var(--border); border-radius:12px; display:flex; align-items:center; gap:12px; background:var(--white); }
+.security-icon { width:36px;height:36px;border-radius:9px;background:var(--green-light);color:var(--green);display:grid;place-items:center; }
+.security-info { flex:1; }.security-info strong,.security-info small { display:block; }.security-info small { margin-top:4px;color:var(--text-2);font-size:9px; }.security-status { padding:5px 9px;border-radius:999px;background:var(--green-light);color:var(--green);font-size:8px;font-weight:800; }
+.settings-save-message { position:fixed;right:20px;bottom:20px;z-index:9999;display:flex;gap:8px;align-items:center;padding:11px 15px;border-radius:10px;background:var(--white);border:1px solid var(--border);color:var(--green);box-shadow:0 10px 30px rgba(0,0,0,.15); }
+.billing-transfer-animation-v2 { margin-top:24px; display:grid; grid-template-columns:120px 1fr 100px; align-items:center; gap:16px; min-height:68px; }
+.bill-source-v2,.printer-icon-v2 { display:flex;flex-direction:column;align-items:center;gap:6px;color:#fff;font-size:8px;font-weight:800;letter-spacing:1.3px; }
+.data-stream-v2 { position:relative;height:38px;display:flex;align-items:center;justify-content:space-between; }
+.data-stream-v2:before { content:"";position:absolute;left:0;right:0;height:2px;background:rgba(255,255,255,.18); }
+.data-stream-v2 i { position:relative;width:8px;height:8px;border-radius:50%;background:#c5efdf;box-shadow:0 0 12px rgba(197,239,223,.6);animation:dataWave 1.35s ease-in-out infinite; }
+.data-stream-v2 i:nth-child(2){animation-delay:.12s}.data-stream-v2 i:nth-child(3){animation-delay:.24s}.data-stream-v2 i:nth-child(4){animation-delay:.36s}.data-stream-v2 i:nth-child(5){animation-delay:.48s}.data-stream-v2 i:nth-child(6){animation-delay:.6s}
+@keyframes dataWave {0%,100%{transform:translateY(9px);opacity:.35}50%{transform:translateY(-9px);opacity:1}}
+.billing-machine.is-printing .data-stream-v2 i { animation-duration:.65s; }.billing-machine.is-printing .printer-icon-v2 svg { animation:printerPulse .5s infinite; }
+@keyframes printerPulse {50%{transform:translateY(-2px) scale(1.07)}}
+.billing-machine-receipt .printed-paper { transform:translateY(14px);opacity:.2; }.billing-machine.is-printing .printed-paper { animation:paperOut 2.6s cubic-bezier(.2,.8,.3,1) forwards; }
+@keyframes paperOut {0%{transform:translateY(14px);opacity:.2}20%{opacity:1}100%{transform:translateY(-34px);opacity:1}}
+.quotation-form-card{margin-bottom:18px}.empty-state{padding:45px 20px;text-align:center;color:var(--muted);font-size:11px}.secondary-button{height:38px;padding:0 14px;border-radius:9px;border:1px solid var(--border);background:var(--white);color:var(--text);font-weight:700;cursor:pointer}.audit-demo-list{padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--soft)}.audit-demo-list p{color:var(--text-2);font-size:10px;line-height:1.6;margin:7px 0 0}
+@media(max-width:700px){.billing-transfer-animation-v2{grid-template-columns:80px 1fr 75px;gap:8px}.settings-form{grid-template-columns:1fr}.settings-form-actions{grid-column:1}.security-row{align-items:flex-start}}
+`;
+
+const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX;
 
 export default App;
