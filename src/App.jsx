@@ -643,9 +643,9 @@ function App() {
         setMaterials((m.data || []).map(mapMaterial));
         setSuppliers((s.data || []).map(mapSupplier));
         setStaff((st.data || []).map(mapStaff));
-        setPayments(p.data || []);
-        setExpenses(e.data || []);
-        setTransfers(tr.data || []);
+        setPayments((p.data && p.data.length) ? p.data : (local.payments || []));
+        setExpenses((e.data && e.data.length) ? e.data : (local.expenses || []));
+        setTransfers((tr.data && tr.data.length) ? tr.data : (local.transfers || []));
         setTransactions((tx.data && tx.data.length) ? tx.data : (local.transactions || []));
         setAuditLogs(al.data || []);
         setDbReady(true);
@@ -2395,6 +2395,29 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
   const [payment, setPayment] = useState("");
   const [billPrinting, setBillPrinting] = useState(false);
   const [billRun, setBillRun] = useState(0);
+
+  // Transactions should never appear as a mysteriously blank screen.
+  // If the real transaction table has no rows yet, show a read-only activity
+  // feed derived from the current invoices/payments until real transactions exist.
+  const displayTransactions = safeTransactions.length
+    ? safeTransactions
+    : safePayments.length
+      ? safePayments.map((pay, i) => ({
+          id: pay.id || `payment-${i}`,
+          transaction_date: pay.paid_at,
+          description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
+          transaction_type: "Income",
+          account: pay.payment_method || "Cash",
+          amount: pay.amount,
+        }))
+      : invoices.map((invoice, i) => ({
+          id: `invoice-activity-${invoice.id}-${i}`,
+          transaction_date: new Date().toISOString(),
+          description: `Invoice issued · ${invoice.customer || "Customer"} · ${invoice.id}`,
+          transaction_type: "Income",
+          account: "Accounts Receivable",
+          amount: invoice.amount,
+        }));
   const collectedPercent = invoices.reduce((a, b) => a + b.amount, 0) > 0
     ? Math.min(100, (totalPaid / invoices.reduce((a, b) => a + b.amount, 0)) * 100)
     : 0;
@@ -2483,19 +2506,10 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
               <h2>All Transactions</h2>
               <p>Income, expenses and transfers recorded by the workshop.</p>
             </div>
-            <span className="transaction-count">{safeTransactions.length || safePayments.length} records</span>
+            <span className="transaction-count">{displayTransactions.length} records</span>
           </div>
           <div className="table-head transaction-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>
-          {(safeTransactions.length ? transactions : safePayments.map((pay, i) => ({
-            id: pay.id || `payment-${i}`,
-            transaction_date: pay.paid_at,
-            description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
-            transaction_type: "Income",
-            account: pay.payment_method || "Cash",
-            amount: pay.amount
-          }))).length ? (safeTransactions.length ? transactions : safePayments.map((pay, i) => ({
-            id: pay.id || `payment-${i}`, transaction_date: pay.paid_at, description: pay.notes || `Payment · ${pay.customer || "Customer"}`, transaction_type: "Income", account: pay.payment_method || "Cash", amount: pay.amount
-          }))).map((tx, i) => (
+          {displayTransactions.length ? displayTransactions.map((tx, i) => (
             <div className="table-row transaction-row" key={tx.id || i}>
               <span>{tx.transaction_date ? new Date(tx.transaction_date).toLocaleDateString("en-AE") : "—"}</span>
               <strong>{tx.description || "Workshop transaction"}</strong>
@@ -7482,6 +7496,663 @@ button:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
 }
 `;
 
-const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX + AL_KANZ_FULL_MOTION_CSS;
+const FINAL_VISUAL_OVERRIDE_CSS = `
+/* ============================================================
+   AL KANZ — FINAL 2026 VISUAL SYSTEM
+   This layer intentionally overrides the older experimental
+   theme/motion rules above.  Night is a different visual language.
+============================================================ */
+
+/* ---------- semantic theme tokens ---------- */
+.app.theme-day {
+  --bg:#f4f8f7;
+  --surface:#ffffff;
+  --surface-2:#f8fbfa;
+  --surface-3:#edf5f2;
+  --text:#152728;
+  --text-2:#526669;
+  --muted:#849698;
+  --border:#dce8e5;
+  --accent:#0e7768;
+  --accent-2:#1ca58f;
+  --accent-soft:#e4f4ef;
+  --sidebar:#083f38;
+  --sidebar-2:#0d5147;
+  --shadow:0 20px 60px rgba(11,64,56,.10);
+  --glow:rgba(22,137,119,.18);
+}
+.app.theme-night {
+  color-scheme:dark;
+  --bg:#05070d;
+  --surface:#0b0f19;
+  --surface-2:#101522;
+  --surface-3:#151b2a;
+  --text:#f2f5ff;
+  --text-2:#b1b8cc;
+  --muted:#747d94;
+  --border:#252c40;
+  --accent:#67e8f9;
+  --accent-2:#a78bfa;
+  --accent-soft:#162033;
+  --sidebar:#070a12;
+  --sidebar-2:#0d1220;
+  --shadow:0 25px 80px rgba(0,0,0,.52);
+  --glow:rgba(103,232,249,.20);
+}
+
+/* ---------- global shell ---------- */
+.app.theme-day,
+.app.theme-night {
+  min-height:100vh;
+  background:var(--bg);
+  color:var(--text);
+}
+.app.theme-night::before {
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:0;
+  background:
+    radial-gradient(circle at 12% 8%,rgba(103,232,249,.075),transparent 24%),
+    radial-gradient(circle at 88% 22%,rgba(167,139,250,.08),transparent 27%),
+    radial-gradient(circle at 58% 92%,rgba(59,130,246,.055),transparent 30%);
+}
+.app.theme-night .main,
+.app.theme-night .content,
+.app.theme-night .topbar {
+  background:transparent !important;
+}
+
+/* ---------- night: deliberately NOT a darkened day theme ---------- */
+.app.theme-night .topbar {
+  border-bottom:1px solid #1c2334 !important;
+  background:rgba(5,7,13,.78) !important;
+  backdrop-filter:blur(22px);
+}
+.app.theme-night .sidebar {
+  background:
+    linear-gradient(180deg,#060912 0%,#090d17 48%,#05070d 100%) !important;
+  border-right:1px solid #1b2233 !important;
+  box-shadow:18px 0 55px rgba(0,0,0,.30);
+}
+.app.theme-night .brand-logo {
+  background:linear-gradient(135deg,#67e8f9,#a78bfa) !important;
+  color:#05070d !important;
+  box-shadow:0 0 30px rgba(103,232,249,.20);
+}
+.app.theme-night .workshop-status {
+  background:linear-gradient(135deg,#0d1726,#111827) !important;
+  border:1px solid #233149 !important;
+  color:#c9d3e8 !important;
+}
+.app.theme-night .workshop-status span {
+  background:#67e8f9 !important;
+  box-shadow:0 0 12px #67e8f9;
+}
+.app.theme-night .nav-section-title {
+  color:#5d6881 !important;
+}
+.app.theme-night .nav-item,
+.app.theme-night .sub-menu button {
+  color:#a8b1c6 !important;
+}
+.app.theme-night .nav-item:hover,
+.app.theme-night .sub-menu button:hover {
+  background:#111827 !important;
+  color:#eef5ff !important;
+}
+.app.theme-night .nav-item.selected,
+.app.theme-night .sub-menu button.sub-selected {
+  background:linear-gradient(100deg,#102b35,#17172d) !important;
+  color:#f5fbff !important;
+  border:1px solid #284451 !important;
+  box-shadow:inset 3px 0 #67e8f9,0 8px 25px rgba(0,0,0,.20);
+}
+.app.theme-night .sub-menu button.sub-selected > span {
+  background:#a78bfa !important;
+  box-shadow:0 0 9px #a78bfa;
+}
+.app.theme-night .account-card {
+  background:#0d1220 !important;
+  border:1px solid #20283b;
+}
+.app.theme-night .account-avatar {
+  background:linear-gradient(135deg,#67e8f9,#a78bfa) !important;
+  color:#05070d !important;
+}
+.app.theme-night .logout:hover {
+  background:#111827 !important;
+  color:#fff !important;
+}
+
+/* ---------- night surfaces: no white boxes ---------- */
+.app.theme-night .card,
+.app.theme-night .table-card,
+.app.theme-night .jobs-modern-card,
+.app.theme-night .settings-card,
+.app.theme-night .appearance-card,
+.app.theme-night .account-big-card,
+.app.theme-night .daily-expense-card,
+.app.theme-night .quotation-form-card,
+.app.theme-night .quotation-document,
+.app.theme-night .billing-transactions-card,
+.app.theme-night .report-box,
+.app.theme-night .report-chart,
+.app.theme-night .reports-chart-card {
+  background:
+    linear-gradient(145deg,rgba(16,21,34,.96),rgba(8,12,20,.98)) !important;
+  color:var(--text) !important;
+  border:1px solid #222b3e !important;
+  box-shadow:0 18px 55px rgba(0,0,0,.30);
+}
+.app.theme-night .card:hover,
+.app.theme-night .table-card:hover,
+.app.theme-night .report-box:hover {
+  border-color:#35435d !important;
+  box-shadow:0 22px 65px rgba(0,0,0,.42),0 0 0 1px rgba(103,232,249,.025);
+}
+.app.theme-night .table-head {
+  background:#090e18 !important;
+  border-color:#222b3e !important;
+  color:#66738c !important;
+}
+.app.theme-night .table-row {
+  background:transparent !important;
+  color:#dce4f2 !important;
+  border-color:#1d2638 !important;
+}
+.app.theme-night .table-row:hover {
+  background:#101726 !important;
+}
+.app.theme-night .card-header h2,
+.app.theme-night .page-title h1,
+.app.theme-night .page-heading h1,
+.app.theme-night h1,
+.app.theme-night h2,
+.app.theme-night h3,
+.app.theme-night strong {
+  color:#f3f6ff !important;
+}
+.app.theme-night .card-header p,
+.app.theme-night .page-title p,
+.app.theme-night .page-heading p,
+.app.theme-night small {
+  color:#8993aa !important;
+}
+
+/* ---------- night controls ---------- */
+.app.theme-night input,
+.app.theme-night select,
+.app.theme-night textarea,
+.app.theme-night .global-search,
+.app.theme-night .jobs-search-modern,
+.app.theme-night .jobs-status-filter,
+.app.theme-night .field input,
+.app.theme-night .field select,
+.app.theme-night .settings-form input,
+.app.theme-night .settings-form select,
+.app.theme-night .settings-form textarea {
+  background:#080d16 !important;
+  color:#eef4ff !important;
+  border-color:#273148 !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.02);
+}
+.app.theme-night input:focus,
+.app.theme-night select:focus,
+.app.theme-night textarea:focus {
+  border-color:#67e8f9 !important;
+  box-shadow:0 0 0 3px rgba(103,232,249,.09) !important;
+}
+.app.theme-night input::placeholder,
+.app.theme-night textarea::placeholder {
+  color:#5f6a81 !important;
+}
+.app.theme-night .secondary-button,
+.app.theme-night .filter-button,
+.app.theme-night .text-button {
+  background:#0e1421 !important;
+  color:#cbd4e6 !important;
+  border:1px solid #29334a !important;
+}
+.app.theme-night .secondary-button:hover,
+.app.theme-night .filter-button:hover {
+  background:#151d2d !important;
+  border-color:#42516c !important;
+  color:#fff !important;
+}
+.app.theme-night .primary-button {
+  background:linear-gradient(135deg,#67e8f9,#8b7cf6) !important;
+  color:#05070d !important;
+  box-shadow:0 12px 32px rgba(103,232,249,.15);
+}
+.app.theme-night .primary-button:hover {
+  filter:brightness(1.08);
+  box-shadow:0 15px 40px rgba(103,232,249,.24);
+}
+
+/* ---------- night dashboard: distinct "command center" ---------- */
+.app.theme-night .page-heading::after {
+  width:320px;
+  height:180px;
+  background:
+    radial-gradient(circle at 25% 40%,rgba(103,232,249,.17),transparent 35%),
+    radial-gradient(circle at 80% 50%,rgba(167,139,250,.14),transparent 38%);
+}
+.app.theme-night .hero {
+  background:
+    radial-gradient(circle at 85% 50%,rgba(103,232,249,.15),transparent 22%),
+    radial-gradient(circle at 70% 100%,rgba(167,139,250,.13),transparent 28%),
+    linear-gradient(135deg,#0b1120,#111827 55%,#0a0e18) !important;
+  border:1px solid #27334a !important;
+  box-shadow:0 30px 80px rgba(0,0,0,.45),inset 0 1px rgba(255,255,255,.035);
+}
+.app.theme-night .hero::after {
+  opacity:.35;
+}
+.app.theme-night .hero-ring {
+  border-color:rgba(103,232,249,.20) !important;
+}
+.app.theme-night .hero-sofa {
+  background:linear-gradient(135deg,#67e8f9,#a78bfa) !important;
+  color:#05070d !important;
+  box-shadow:0 0 55px rgba(103,232,249,.20);
+}
+.app.theme-night .floating-icon {
+  background:#0b1220 !important;
+  border:1px solid #30405b !important;
+  color:#67e8f9 !important;
+  box-shadow:0 10px 35px rgba(0,0,0,.38);
+}
+.app.theme-night .stat-card,
+.app.theme-night .stat {
+  background:linear-gradient(145deg,#0d1422,#090d16) !important;
+  border:1px solid #232e43 !important;
+  color:#fff !important;
+}
+.app.theme-night .stat-icon {
+  background:#111b2c !important;
+  color:#67e8f9 !important;
+}
+.app.theme-night .large-progress {
+  background:#1a2334 !important;
+}
+.app.theme-night .large-progress span {
+  background:linear-gradient(90deg,#67e8f9,#a78bfa) !important;
+}
+
+/* ---------- fixed preview/print modals: fixes the "eye goes upward" bug ---------- */
+.modal-backdrop,
+.modal-overlay {
+  position:fixed !important;
+  inset:0 !important;
+  z-index:1000 !important;
+  width:100vw !important;
+  height:100dvh !important;
+  min-height:100vh !important;
+  display:grid !important;
+  place-items:center !important;
+  padding:24px !important;
+  overflow:auto !important;
+  box-sizing:border-box !important;
+  background:rgba(7,14,15,.58) !important;
+  backdrop-filter:blur(14px) saturate(120%) !important;
+  -webkit-backdrop-filter:blur(14px) saturate(120%) !important;
+}
+.modal-backdrop > .card,
+.modal-overlay > .card,
+.modal-backdrop > .modal,
+.modal-overlay > .modal {
+  position:relative !important;
+  top:auto !important;
+  left:auto !important;
+  margin:0 auto !important;
+  max-height:calc(100dvh - 48px) !important;
+  overflow:auto !important;
+}
+.entity-preview-modal,
+.print-options-modal {
+  width:min(620px,calc(100vw - 48px)) !important;
+  max-height:calc(100dvh - 48px) !important;
+  overflow:auto !important;
+}
+.modal-backdrop .quotation-modal-document {
+  width:min(860px,calc(100vw - 48px)) !important;
+}
+.modal-backdrop .job-drawer-close {
+  z-index:3;
+}
+.app.theme-night .modal-backdrop,
+.app.theme-night .modal-overlay {
+  background:rgba(0,0,0,.72) !important;
+}
+.app.theme-night .entity-preview-modal,
+.app.theme-night .print-options-modal,
+.app.theme-night .quotation-modal-document,
+.app.theme-night .modal {
+  background:linear-gradient(145deg,#111827,#080c14) !important;
+  border:1px solid #2b3851 !important;
+  color:#f2f5ff !important;
+  box-shadow:0 35px 100px rgba(0,0,0,.70),0 0 70px rgba(103,232,249,.035);
+}
+.app.theme-night .entity-preview-grid > div {
+  background:#0b111d !important;
+  border-color:#263148 !important;
+}
+.app.theme-night .entity-preview-grid strong {
+  color:#edf4ff !important;
+}
+.app.theme-night .entity-preview-grid small {
+  color:#6f7b93 !important;
+}
+
+/* ---------- eye buttons ---------- */
+.row-action {
+  position:relative;
+  z-index:2;
+  width:34px !important;
+  height:34px !important;
+  min-width:34px !important;
+  display:grid !important;
+  place-items:center !important;
+  cursor:pointer !important;
+  border-radius:10px !important;
+  border:1px solid var(--border) !important;
+  background:var(--surface-2) !important;
+  color:var(--accent) !important;
+}
+.row-action:hover {
+  transform:translateY(-2px) scale(1.05);
+}
+.app.theme-night .row-action {
+  background:#0b1220 !important;
+  border-color:#2c3850 !important;
+  color:#67e8f9 !important;
+  box-shadow:0 6px 18px rgba(0,0,0,.28);
+}
+.app.theme-night .row-action:hover {
+  border-color:#67e8f9 !important;
+  box-shadow:0 0 22px rgba(103,232,249,.16);
+}
+
+/* ---------- quotation: invoice-like professional document ---------- */
+.app.theme-night .quotation-document,
+.app.theme-night .invoice-preview,
+.app.theme-night .quotation-preview {
+  background:#f8fafc !important;
+  color:#15202b !important;
+}
+.app.theme-night .quotation-document h2,
+.app.theme-night .quotation-document strong {
+  color:#15202b !important;
+}
+.app.theme-night .quotation-ai-box {
+  background:linear-gradient(135deg,#0d1726,#111827) !important;
+  border-color:#293852 !important;
+}
+.app.theme-night .quotation-ai-box strong {
+  color:#f3f6ff !important;
+}
+.app.theme-night .quotation-ai-box p {
+  color:#aab5ca !important;
+}
+
+/* ---------- billing: replace awkward printer animation with a calm flow ---------- */
+.billing-machine {
+  position:relative;
+}
+.billing-machine.is-printing {
+  animation:billingPulse 1.4s ease-in-out infinite;
+}
+.billing-machine.is-printing .billing-machine-screen {
+  box-shadow:0 0 0 1px rgba(14,119,104,.22),0 24px 70px rgba(14,119,104,.12);
+}
+.billing-flow {
+  overflow:hidden;
+}
+.billing-flow-line i {
+  animation:billingDot 1.4s ease-in-out infinite !important;
+}
+.billing-flow-line i:nth-child(2) { animation-delay:.18s !important; }
+.billing-flow-line i:nth-child(3) { animation-delay:.36s !important; }
+.billing-machine-receipt .printed-paper {
+  animation:none !important;
+}
+.billing-machine.is-printing .printed-paper {
+  animation:paperSettle .9s cubic-bezier(.2,.8,.2,1) both !important;
+}
+@keyframes billingPulse {
+  0%,100% { transform:translateY(0); }
+  50% { transform:translateY(-2px); }
+}
+@keyframes billingDot {
+  0%,100% { opacity:.25; transform:scale(.8); }
+  50% { opacity:1; transform:scale(1.12); }
+}
+@keyframes paperSettle {
+  0% { opacity:.4; transform:translateY(-14px); }
+  65% { opacity:1; transform:translateY(3px); }
+  100% { opacity:1; transform:translateY(0); }
+}
+.app.theme-night .billing-machine {
+  background:linear-gradient(145deg,#080d17,#0d1422) !important;
+  border-color:#26334b !important;
+  box-shadow:0 30px 80px rgba(0,0,0,.42);
+}
+.app.theme-night .billing-machine-screen,
+.app.theme-night .billing-machine-receipt {
+  background:linear-gradient(145deg,#0e1522,#090e18) !important;
+  border-color:#26334b !important;
+}
+.app.theme-night .billing-machine-screen::after {
+  background:linear-gradient(90deg,transparent,#67e8f9,transparent) !important;
+}
+
+/* ---------- search / popovers ---------- */
+.app.theme-night .global-search-results,
+.app.theme-night .ai-panel,
+.app.theme-night .admin-dropdown,
+.app.theme-night .notification-popover {
+  background:#0b111d !important;
+  border:1px solid #28334a !important;
+  color:#f2f5ff !important;
+  box-shadow:0 30px 90px rgba(0,0,0,.65);
+}
+.app.theme-night .search-result:hover,
+.app.theme-night .ai-suggestions button:hover,
+.app.theme-night .admin-dropdown > button:hover,
+.app.theme-night .notification-footer:hover {
+  background:#111a2a !important;
+}
+.app.theme-night .search-result-icon,
+.app.theme-night .ai-suggestion-number {
+  background:#122337 !important;
+  color:#67e8f9 !important;
+}
+.app.theme-night .ai-suggestions button {
+  background:#0d1421 !important;
+  border-color:#263249 !important;
+  color:#edf4ff !important;
+}
+
+/* ---------- settings: day/night controls are equal ---------- */
+.theme-options-two {
+  grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+  gap:14px !important;
+}
+.theme-options-two .theme-option {
+  min-height:120px !important;
+  width:100% !important;
+}
+.app.theme-night .theme-option {
+  background:#0b111d !important;
+  color:#f2f5ff !important;
+  border-color:#27334a !important;
+}
+.app.theme-night .theme-option.active {
+  border-color:#67e8f9 !important;
+  box-shadow:0 0 0 1px rgba(103,232,249,.25),0 15px 40px rgba(0,0,0,.32);
+}
+.theme-preview-day {
+  background:linear-gradient(135deg,#fff 0 50%,#dceee9 50%) !important;
+}
+.theme-preview-night {
+  background:
+    radial-gradient(circle at 70% 30%,#67e8f9 0 8%,transparent 9%),
+    linear-gradient(135deg,#05070d,#111827 55%,#312e81) !important;
+  position:relative;
+  overflow:hidden;
+}
+.theme-preview-night::after {
+  content:"✦";
+  position:absolute;
+  right:10px;
+  top:7px;
+  color:#a78bfa;
+  font-size:10px;
+}
+
+/* ---------- mobile: compact icon + small text sidebar ---------- */
+@media(max-width:850px) {
+  .sidebar {
+    width:224px !important;
+    max-width:82vw !important;
+    z-index:1100 !important;
+  }
+  .sidebar-overlay {
+    position:fixed !important;
+    inset:0 !important;
+    z-index:1090 !important;
+    display:block !important;
+    border:0 !important;
+    background:rgba(0,0,0,.46) !important;
+    backdrop-filter:blur(4px);
+  }
+  .mobile-close {
+    display:grid !important;
+    place-items:center;
+  }
+  .nav-item {
+    min-height:36px !important;
+    font-size:9px !important;
+    gap:8px !important;
+  }
+  .nav-item svg {
+    width:16px !important;
+    height:16px !important;
+  }
+  .sub-menu button {
+    min-height:28px !important;
+    font-size:8px !important;
+  }
+  .main {
+    width:100% !important;
+    margin-left:0 !important;
+  }
+  .topbar {
+    position:sticky !important;
+    z-index:60 !important;
+  }
+  .global-search {
+    min-width:0 !important;
+  }
+}
+@media(max-width:600px) {
+  .sidebar {
+    width:210px !important;
+  }
+  .nav-section-title {
+    font-size:6px !important;
+  }
+  .nav-item {
+    min-height:31px !important;
+    padding:0 8px !important;
+    font-size:8.5px !important;
+  }
+  .nav-item svg {
+    width:14px !important;
+    height:14px !important;
+  }
+  .sub-menu {
+    padding-left:28px !important;
+  }
+  .sub-menu button {
+    min-height:25px !important;
+    font-size:7.5px !important;
+  }
+  .entity-preview-modal,
+  .print-options-modal,
+  .modal-backdrop .quotation-modal-document {
+    width:calc(100vw - 24px) !important;
+    max-height:calc(100dvh - 24px) !important;
+  }
+  .modal-backdrop,
+  .modal-overlay {
+    padding:12px !important;
+  }
+  .theme-options-two {
+    grid-template-columns:1fr !important;
+  }
+}
+@media(max-width:480px) {
+  .topbar-right {
+    gap:5px !important;
+  }
+  .global-search {
+    height:34px !important;
+  }
+  .global-search input {
+    font-size:9px !important;
+  }
+}
+
+/* ---------- print is actually printable ---------- */
+@media print {
+  body {
+    background:#fff !important;
+  }
+  .sidebar,
+  .topbar,
+  .ai-panel,
+  .modal-backdrop > .modal-close,
+  .modal-backdrop .document-actions,
+  .billing-action-strip,
+  .report-toolbar,
+  .notification-popover,
+  .admin-dropdown {
+    display:none !important;
+  }
+  .main {
+    width:100% !important;
+    margin:0 !important;
+  }
+  .content {
+    padding:0 !important;
+  }
+  .card,
+  .table-card,
+  .quotation-document {
+    box-shadow:none !important;
+  }
+  .modal-backdrop {
+    position:static !important;
+    display:block !important;
+    background:#fff !important;
+    padding:0 !important;
+  }
+}
+
+/* ---------- accessibility ---------- */
+@media(prefers-reduced-motion:reduce) {
+  .app.theme-night *,
+  .app.theme-day * {
+    animation-duration:.001ms !important;
+    animation-iteration-count:1 !important;
+    scroll-behavior:auto !important;
+  }
+}
+`;
+
+const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX + AL_KANZ_FULL_MOTION_CSS + FINAL_VISUAL_OVERRIDE_CSS;
 
 export default App;
