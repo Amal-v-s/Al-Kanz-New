@@ -2450,7 +2450,13 @@ function StaffPage({ staff, setStaff, setModal }) {
 ============================================================ */
 
 function BillingPage({ page, jobs, payments = [], transactions = [], outstanding, totalPaid, recordPayment }) {
-  const invoices = jobs.map((job) => ({
+  // Defensive normalization: Appwrite/localStorage can briefly return null or a non-array
+  // while data is loading. The billing UI must still render instead of becoming blank.
+  const safeJobs = Array.isArray(jobs) ? jobs : [];
+  const safePayments = Array.isArray(payments) ? payments : [];
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+
+  const invoices = safeJobs.map((job) => ({
     id: `INV-${String(job.id).replace("AK-", "")}`,
     customer: job.customer,
     jobId: job.id,
@@ -2548,17 +2554,17 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
               <h2>All Transactions</h2>
               <p>Income, expenses and transfers recorded by the workshop.</p>
             </div>
-            <span className="transaction-count">{transactions.length || payments.length} records</span>
+            <span className="transaction-count">{safeTransactions.length || safePayments.length} records</span>
           </div>
           <div className="table-head transaction-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>
-          {(transactions.length ? transactions : payments.map((pay, i) => ({
+          {(safeTransactions.length ? transactions : safePayments.map((pay, i) => ({
             id: pay.id || `payment-${i}`,
             transaction_date: pay.paid_at,
             description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
             transaction_type: "Income",
             account: pay.payment_method || "Cash",
             amount: pay.amount
-          }))).length ? (transactions.length ? transactions : payments.map((pay, i) => ({
+          }))).length ? (safeTransactions.length ? transactions : safePayments.map((pay, i) => ({
             id: pay.id || `payment-${i}`, transaction_date: pay.paid_at, description: pay.notes || `Payment · ${pay.customer || "Customer"}`, transaction_type: "Income", account: pay.payment_method || "Cash", amount: pay.amount
           }))).map((tx, i) => (
             <div className="table-row transaction-row" key={tx.id || i}>
@@ -2591,7 +2597,7 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
       ) : (
         <div className="table-card">
           <div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>METHOD</span><span>AMOUNT</span><span>REFERENCE</span></div>
-          {payments.length ? payments.map((pay, i) => (
+          {safePayments.length ? safePayments.map((pay, i) => (
             <div className="table-row" key={pay.id || i}>
               <span>{pay.paid_at ? new Date(pay.paid_at).toLocaleDateString("en-AE") : "—"}</span>
               <strong>{pay.customer || pay.notes || "Customer Payment"}</strong>
