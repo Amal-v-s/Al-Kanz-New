@@ -650,7 +650,7 @@ function App() {
         setPayments(p.data || []);
         setExpenses(e.data || []);
         setTransfers(tr.data || []);
-        setTransactions(tx.data || []);
+        setTransactions((tx.data && tx.data.length) ? tx.data : (local.transactions || []));
         setAuditLogs(al.data || []);
         setDbReady(true);
       } catch (error) {
@@ -1247,6 +1247,7 @@ const netCash = totalPaid - totalExpenses;
 
             {(page === "Billing" ||
               page === "Main" ||
+              page === "Transactions" ||
               page === "Invoices" ||
               page === "Payments") && (
               <BillingPage
@@ -2495,10 +2496,21 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
                 <div><b>{Math.round(collectedPercent)}%</b><span>collected</span></div>
               </div>
             </div>
-            <div className="billing-transfer-animation-v2" aria-hidden="true">
-              <div className="bill-source-v2"><FileText size={18}/><span>CREATE BILL</span></div>
-              <div className="data-stream-v2"><i/><i/><i/><i/><i/><i/></div>
-              <div className="printer-icon-v2"><Printer size={24}/><span>PRINTER</span></div>
+            <div className="billing-flow" aria-hidden="true">
+              <div className="billing-flow-step active">
+                <div className="flow-icon"><FileText size={18}/></div>
+                <span>1 · BILL CREATED</span>
+              </div>
+              <div className="billing-flow-line"><i/><i/><i/></div>
+              <div className="billing-flow-step">
+                <div className="flow-icon printer"><Printer size={19}/></div>
+                <span>2 · SEND TO PRINTER</span>
+              </div>
+              <div className="billing-flow-line"><i/><i/><i/></div>
+              <div className="billing-flow-step">
+                <div className="flow-icon paper"><ReceiptText size={18}/></div>
+                <span>3 · RECEIPT READY</span>
+              </div>
             </div>
             <div className="machine-scanline" />
           </div>
@@ -2529,7 +2541,37 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
       </div>
 
       {page === "Transactions" ? (
-        <TransactionTable transactions={transactions} payments={payments} />
+        <div className="table-card billing-transactions-card">
+          <div className="transactions-title-row">
+            <div>
+              <span className="eyebrow">LEDGER</span>
+              <h2>All Transactions</h2>
+              <p>Income, expenses and transfers recorded by the workshop.</p>
+            </div>
+            <span className="transaction-count">{transactions.length || payments.length} records</span>
+          </div>
+          <div className="table-head transaction-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>
+          {(transactions.length ? transactions : payments.map((pay, i) => ({
+            id: pay.id || `payment-${i}`,
+            transaction_date: pay.paid_at,
+            description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
+            transaction_type: "Income",
+            account: pay.payment_method || "Cash",
+            amount: pay.amount
+          }))).length ? (transactions.length ? transactions : payments.map((pay, i) => ({
+            id: pay.id || `payment-${i}`, transaction_date: pay.paid_at, description: pay.notes || `Payment · ${pay.customer || "Customer"}`, transaction_type: "Income", account: pay.payment_method || "Cash", amount: pay.amount
+          }))).map((tx, i) => (
+            <div className="table-row transaction-row" key={tx.id || i}>
+              <span>{tx.transaction_date ? new Date(tx.transaction_date).toLocaleDateString("en-AE") : "—"}</span>
+              <strong>{tx.description || "Workshop transaction"}</strong>
+              <Status status={tx.transaction_type || "Income"} />
+              <span>{tx.account || "Cash"}</span>
+              <strong className={tx.transaction_type === "Expense" ? "expense" : "income"}>
+                {tx.transaction_type === "Expense" ? "-" : "+"}{money(tx.amount)}
+              </strong>
+            </div>
+          )) : <EmptyState icon={ReceiptText} title="No transactions yet" text="Customer payments, expenses and transfers will appear here." />}
+        </div>
       ) : page !== "Payments" ? (
         <div className="table-card">
           <div className="table-head invoice-head"><span>INVOICE</span><span>CUSTOMER</span><span>JOB / ITEM</span><span>AMOUNT</span><span>PAID</span><span>BALANCE</span><span>STATUS</span><span /></div>
@@ -2587,64 +2629,6 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
         </div>
       )}
     </>
-  );
-}
-
-function TransactionTable({ transactions = [], payments = [] }) {
-  // Payments are also converted into transactions when a payment is recorded.
-  // If the remote transaction collection is empty (for example on a fresh
-  // Appwrite database), use the payment records so this page never appears
-  // mysteriously blank.
-  const rows = transactions.length
-    ? transactions
-    : payments.map((pay, index) => ({
-        id: pay.id || `payment-${index}`,
-        transaction_type: "Income",
-        description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
-        amount: Number(pay.amount || 0),
-        account: pay.payment_method || "Cash",
-        transaction_date: pay.paid_at,
-      }));
-
-  return (
-    <div className="table-card">
-      <div className="table-head">
-        <span>DATE</span>
-        <span>DESCRIPTION</span>
-        <span>TYPE</span>
-        <span>ACCOUNT</span>
-        <span>AMOUNT</span>
-      </div>
-
-      {rows.length ? rows.map((tx, index) => {
-        const type = tx.transaction_type || "Income";
-        const isExpense = type.toLowerCase() === "expense";
-        const isTransfer = type.toLowerCase() === "transfer";
-        const sign = isExpense ? "-" : isTransfer ? "" : "+";
-
-        return (
-          <div className="table-row" key={tx.id || index}>
-            <span>
-              {tx.transaction_date
-                ? new Date(tx.transaction_date).toLocaleDateString("en-AE")
-                : "—"}
-            </span>
-            <strong>{tx.description || "Workshop transaction"}</strong>
-            <Status status={type} />
-            <span>{tx.account || "Cash"}</span>
-            <strong className={isExpense ? "expense" : "income"}>
-              {sign}{money(tx.amount)}
-            </strong>
-          </div>
-        );
-      }) : (
-        <EmptyState
-          icon={ReceiptText}
-          title="No transactions yet"
-          text="Customer payments, expenses and transfers will appear here when recorded."
-        />
-      )}
-    </div>
   );
 }
 
@@ -7063,6 +7047,106 @@ const AL_KANZ_LAST_FIX = `
 @media(max-width:700px){.billing-transfer-animation-v2{grid-template-columns:80px 1fr 75px;gap:8px}.settings-form{grid-template-columns:1fr}.settings-form-actions{grid-column:1}.security-row{align-items:flex-start}}
 `;
 
-const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX;
+
+const AL_KANZ_TRUE_FINAL_FIX = `
+/* ============================================================
+   TRUE FINAL FIX — TRANSACTIONS / DARK THEME / BILLING FLOW
+   ============================================================ */
+
+/* Transactions */
+.billing-transactions-card { overflow:hidden; }
+.transactions-title-row { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; padding:22px 24px 18px; border-bottom:1px solid var(--border); }
+.transactions-title-row h2 { margin:4px 0 4px; color:var(--text); font-size:18px; }
+.transactions-title-row p { margin:0; color:var(--text-2); font-size:10px; }
+.transaction-count { padding:7px 10px; border-radius:999px; background:var(--green-light); color:var(--green); font-size:9px; font-weight:800; white-space:nowrap; }
+.transaction-head,.transaction-row { grid-template-columns:1fr 2.2fr 1fr 1fr 1.1fr; min-width:650px; }
+.transaction-row { min-height:58px; }
+.transaction-row strong { color:var(--text); }
+.transaction-row .income { color:#168061; }
+.transaction-row .expense { color:#c45f55; }
+
+/* Completely consistent dark workspace */
+.app.theme-dark {
+  --bg:#08110f;
+  --white:#121d1a;
+  --soft:#172420;
+  --green:#73d4b2;
+  --green-dark:#50b697;
+  --green-light:#173b31;
+  --sidebar:#061612;
+  --sidebar-2:#0d3028;
+  --sidebar-text:#c1d6d0;
+  --text:#f0f7f4;
+  --text-2:#b0c4be;
+  --muted:#81958f;
+  --border:#2b403a;
+  --shadow:0 12px 35px rgba(0,0,0,.38);
+  background:var(--bg) !important;
+}
+.app.theme-dark .main,
+.app.theme-dark .content { background:var(--bg) !important; }
+.app.theme-dark .topbar { background:#0d1815 !important; border-color:#263a35 !important; color:var(--text); }
+.app.theme-dark .sidebar { background:linear-gradient(180deg,#061612,#081b17) !important; border-color:#1d302b !important; }
+.app.theme-dark .brand strong,.app.theme-dark .brand span,.app.theme-dark .nav-section-title { color:var(--sidebar-text); }
+.app.theme-dark .nav-item,.app.theme-dark .sub-menu button { color:#a9beb8 !important; }
+.app.theme-dark .nav-item:hover,.app.theme-dark .sub-menu button:hover { background:#12332b !important; color:#e4f5ef !important; }
+.app.theme-dark .nav-item.selected,.app.theme-dark .sub-menu button.sub-selected { background:#155143 !important; color:#e9fff7 !important; }
+.app.theme-dark .card,.app.theme-dark .table-card,.app.theme-dark .jobs-modern-card,.app.theme-dark .settings-card,.app.theme-dark .appearance-card,.app.theme-dark .modal,.app.theme-dark .job-drawer { background:#121d1a !important; border-color:#2b403a !important; color:var(--text) !important; box-shadow:var(--shadow); }
+.app.theme-dark .table-head { background:#0e1916 !important; color:#819b93 !important; border-color:#2a3d38 !important; }
+.app.theme-dark .table-row { background:#121d1a !important; border-color:#263a35 !important; color:var(--text); }
+.app.theme-dark .table-row:hover { background:#172823 !important; }
+.app.theme-dark input,.app.theme-dark select,.app.theme-dark textarea,.app.theme-dark .field input,.app.theme-dark .field select,.app.theme-dark .settings-form input,.app.theme-dark .settings-form select,.app.theme-dark .settings-form textarea,.app.theme-dark .global-search,.app.theme-dark .jobs-search-modern,.app.theme-dark .jobs-status-filter { background:#0c1714 !important; border-color:#30453f !important; color:#eef7f3 !important; }
+.app.theme-dark input::placeholder,.app.theme-dark textarea::placeholder { color:#6f837d !important; }
+.app.theme-dark .settings-menu { background:#101b18 !important; border-color:#2b403a !important; }
+.app.theme-dark .settings-menu button { color:#a9beb8 !important; }
+.app.theme-dark .settings-menu button.active { background:#183c32 !important; color:#79d7b5 !important; }
+.app.theme-dark .notification-setting,.app.theme-dark .security-row,.app.theme-dark .theme-option,.app.theme-dark .secondary-button { background:#0f1a17 !important; border-color:#2c403b !important; color:var(--text) !important; }
+.app.theme-dark .notification-setting:hover,.app.theme-dark .theme-option:hover { background:#162822 !important; }
+.app.theme-dark .admin-dropdown,.app.theme-dark .notification-popover { background:#111d1a !important; border-color:#2b403a !important; color:var(--text); box-shadow:0 20px 50px rgba(0,0,0,.5); }
+.app.theme-dark .admin-dropdown > button,.app.theme-dark .notification-footer { color:#b9cbc6 !important; }
+.app.theme-dark .admin-dropdown > button:hover,.app.theme-dark .notification-footer:hover { background:#193229 !important; color:#7ad5b4 !important; }
+.app.theme-dark .admin-profile:hover,.app.theme-dark .admin-profile.admin-active { background:#183129 !important; }
+.app.theme-dark .mobile-menu { background:#14241f !important; color:#c3d6d0 !important; }
+.app.theme-dark .page-title h1,.app.theme-dark .page-heading h1,.app.theme-dark h1,.app.theme-dark h2,.app.theme-dark h3,.app.theme-dark strong { color:#eef7f3; }
+.app.theme-dark .page-title p,.app.theme-dark .page-heading p,.app.theme-dark .card-header p,.app.theme-dark small { color:#91a69f; }
+
+/* New billing animation: three calm physical steps */
+.billing-flow { margin-top:24px; display:grid; grid-template-columns:112px 1fr 125px 1fr 112px; align-items:center; gap:10px; padding:12px 14px; border:1px solid rgba(255,255,255,.12); border-radius:14px; background:rgba(0,0,0,.10); }
+.billing-flow-step { display:flex; flex-direction:column; align-items:center; gap:7px; color:#c8e1da; font-size:7px; font-weight:800; letter-spacing:.8px; text-align:center; }
+.flow-icon { width:38px; height:38px; display:grid; place-items:center; border-radius:10px; background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.14); }
+.flow-icon.printer { background:rgba(185,223,121,.13); color:#d8efb8; }
+.flow-icon.paper { background:rgba(113,211,178,.13); color:#bcefe0; }
+.billing-flow-line { height:2px; display:flex; align-items:center; gap:5px; overflow:hidden; }
+.billing-flow-line:before { content:""; flex:1; height:1px; background:rgba(255,255,255,.20); }
+.billing-flow-line i { width:5px; height:5px; border-radius:50%; background:#b9df79; animation:flowDot 1.7s ease-in-out infinite; opacity:.25; }
+.billing-flow-line i:nth-child(2){animation-delay:.28s}.billing-flow-line i:nth-child(3){animation-delay:.56s}
+@keyframes flowDot { 0%,100%{transform:scale(.7);opacity:.2} 50%{transform:scale(1.35);opacity:1} }
+.billing-machine.is-printing .billing-flow-step:nth-child(1) .flow-icon { animation:flowConfirm .55s ease-out; }
+.billing-machine.is-printing .billing-flow-step:nth-child(3) .flow-icon { animation:printerReceive .8s .65s ease-out both; }
+.billing-machine.is-printing .billing-flow-step:nth-child(5) .flow-icon { animation:receiptReady .7s 1.25s ease-out both; }
+@keyframes flowConfirm { 50%{transform:scale(1.08);box-shadow:0 0 0 7px rgba(185,223,121,.08)} }
+@keyframes printerReceive { 50%{transform:translateY(-3px);box-shadow:0 8px 22px rgba(185,223,121,.16)} }
+@keyframes receiptReady { 0%{transform:translateY(4px);opacity:.45} 100%{transform:translateY(0);opacity:1} }
+
+/* Make the receipt physically emerge from the printer, not float */
+.billing-machine-receipt .printed-paper { transform:translateY(-2px); opacity:.35; }
+.billing-machine.is-printing .billing-machine-receipt .printed-paper { animation:cleanPaperFeed 2.2s cubic-bezier(.22,.75,.2,1) .55s both; }
+@keyframes cleanPaperFeed { 0%{transform:translateY(-12px);opacity:.15} 18%{opacity:1} 60%{transform:translateY(8px)} 100%{transform:translateY(0);opacity:1} }
+.billing-machine.is-printing .receipt-printer { animation:printerBody 1.1s ease-in-out .45s both; }
+@keyframes printerBody { 40%{transform:translateY(-2px)} 70%{transform:translateY(1px)} }
+
+@media(max-width:700px){
+  .transactions-title-row { align-items:flex-start; flex-direction:column; }
+  .billing-flow { grid-template-columns:1fr; gap:8px; padding:12px; }
+  .billing-flow-line { height:18px; width:2px; margin:auto; flex-direction:column; }
+  .billing-flow-line:before { width:1px; height:100%; flex:none; }
+  .billing-flow-line i { display:none; }
+}
+@media(prefers-reduced-motion:reduce){
+  .billing-flow-line i,.billing-machine.is-printing .billing-flow-step .flow-icon,.billing-machine.is-printing .billing-machine-receipt .printed-paper,.billing-machine.is-printing .receipt-printer { animation:none !important; }
+}
+`;
+
+const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX;
 
 export default App;
