@@ -248,6 +248,10 @@ import {
   Database,
   ReceiptText,
   Printer,
+  Sparkles,
+  Download,
+  SlidersHorizontal,
+  RefreshCw,
 } from "lucide-react";
 
 /* ============================================================
@@ -602,12 +606,14 @@ function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("al-kanz-theme") || "default");
+  const [theme, setTheme] = useState(() => localStorage.getItem("al-kanz-theme") || "day");
   const [modal, setModal] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
   const [search, setSearch] = useState("");
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [entityPreview, setEntityPreview] = useState(null);
   const [quotations, setQuotations] = useState(() => safeParse(localStorage.getItem("al-kanz-quotations"), []));
 
   useEffect(() => {
@@ -878,24 +884,46 @@ const netCash = totalPaid - totalExpenses;
   };
 
   const filteredJobs = useMemo(() => {
-    const q = search.toLowerCase();
-
+    const q = search.trim().toLowerCase();
     if (!q) return jobs;
-
-    return jobs.filter(
-      (job) =>
-        job.customer.toLowerCase().includes(q) ||
-        job.item.toLowerCase().includes(q) ||
-        job.work.toLowerCase().includes(q) ||
-        job.id.toLowerCase().includes(q)
+    return jobs.filter((job) =>
+      [job.customer, job.item, job.work, job.id, job.phone]
+        .some((v) => String(v || "").toLowerCase().includes(q))
     );
   }, [jobs, search]);
+
+  const globalSearchResults = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    const results = [];
+    const add = (type, label, meta, target, item) => {
+      if (results.length >= 8) return;
+      results.push({ type, label, meta, target, item });
+    };
+    jobs.forEach((x) => {
+      if ([x.customer, x.item, x.work, x.id, x.phone].some(v => String(v || "").toLowerCase().includes(q)))
+        add("Job", x.customer || "Job", `${x.id} · ${x.item || "Workshop item"}`, "Dashboard", x);
+    });
+    customers.forEach((x) => {
+      if ([x.name, x.phone, x.location].some(v => String(v || "").toLowerCase().includes(q)))
+        add("Customer", x.name, `${x.phone || "No phone"} · ${x.location || "Dubai"}`, "Customers", x);
+    });
+    quotations.forEach((x) => {
+      if ([x.id, x.customer, x.item].some(v => String(v || "").toLowerCase().includes(q)))
+        add("Quotation", x.id, `${x.customer} · ${money(x.amount)}`, "All Quotations", x);
+    });
+    transactions.forEach((x) => {
+      if ([x.description, x.transaction_type, x.account].some(v => String(v || "").toLowerCase().includes(q)))
+        add("Transaction", x.description || "Transaction", `${x.transaction_type || "Income"} · ${money(x.amount)}`, "Transactions", x);
+    });
+    return results;
+  }, [search, jobs, customers, quotations, transactions]);
 
   return (
     <>
       <style>{FINAL_CSS}</style>
 
-      <div className={`app theme-${theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} data-theme={theme}>
+      <div className={`app theme-${theme} ${theme === "night" ? "theme-dark" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} data-theme={theme}>
         {/* =====================================================
             SIDEBAR
         ===================================================== */}
@@ -1025,7 +1053,7 @@ const netCash = totalPaid - totalExpenses;
               <MoreHorizontal size={16} />
             </div>
 
-            <button className="logout">
+            <button type="button" className="logout" onClick={() => { setAdminMenuOpen(false); setSidebarOpen(false); alert("Demo mode: logout is not connected to authentication yet."); }}>
               <LogOut size={14} />
               Logout
             </button>
@@ -1062,17 +1090,41 @@ const netCash = totalPaid - totalExpenses;
             </div>
 
             <div className="topbar-right">
-              <div className="global-search">
-                <Search size={16} />
-                <input
-                  value={search}
-                  onChange={(e) =>
-                    setSearch(e.target.value)
-                  }
-                  placeholder="Search jobs, customers..."
-                />
-                <kbd>⌘ K</kbd>
+              <div className="global-search-wrap">
+                <div className="global-search">
+                  <Search size={16} />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search customers, quotations, transactions..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setSearch("");
+                      if (e.key === "Enter" && globalSearchResults[0]) {
+                        navigate(globalSearchResults[0].target);
+                        setSearch("");
+                      }
+                    }}
+                  />
+                  {search && <button type="button" className="search-clear" onClick={() => setSearch("")} aria-label="Clear search"><X size={13}/></button>}
+                  <kbd>⌘ K</kbd>
+                </div>
+                {search && (
+                  <div className="global-search-results">
+                    <div className="search-results-head"><span>SMART SEARCH</span><small>{globalSearchResults.length} result{globalSearchResults.length === 1 ? "" : "s"}</small></div>
+                    {globalSearchResults.length ? globalSearchResults.map((r, i) => (
+                      <button type="button" className="search-result" key={`${r.type}-${i}`} onClick={() => { navigate(r.target); setSearch(""); }}>
+                        <span className="search-result-icon">{r.type === "Customer" ? <Users size={14}/> : r.type === "Quotation" ? <FileText size={14}/> : r.type === "Transaction" ? <ReceiptText size={14}/> : <ClipboardList size={14}/>}</span>
+                        <span><strong>{r.label}</strong><small>{r.type} · {r.meta}</small></span>
+                        <ChevronRight size={14}/>
+                      </button>
+                    )) : <div className="search-empty"><Search size={18}/><strong>No matching records</strong><span>Try a customer, quotation number or transaction.</span></div>}
+                  </div>
+                )}
               </div>
+
+              <button type="button" className={`ai-help-button ${aiOpen ? "active" : ""}`} onClick={() => { setAiOpen(v => !v); setAdminMenuOpen(false); setNotificationOpen(false); }} title="AI Help">
+                <Sparkles size={16}/> <span>AI Help</span>
+              </button>
 
               <div className="notification-wrap">
                 <button
@@ -1178,6 +1230,18 @@ const netCash = totalPaid - totalExpenses;
             </div>
           </header>
 
+          {aiOpen && (
+            <AIHelpPanel
+              page={page}
+              totalPaid={totalPaid}
+              outstanding={outstanding}
+              expenses={expenses}
+              quotations={quotations}
+              navigate={(target) => { setAiOpen(false); navigate(target); }}
+              close={() => setAiOpen(false)}
+            />
+          )}
+
           <div className="content page-motion" key={page} data-page={page}>
             {page === "Dashboard" && (
               <Dashboard
@@ -1208,6 +1272,7 @@ const netCash = totalPaid - totalExpenses;
               <CustomersPage
                 customers={customers}
                 setModal={setModal}
+                setEntityPreview={setEntityPreview}
               />
             )}
 
@@ -1220,11 +1285,11 @@ const netCash = totalPaid - totalExpenses;
             )}
 
             {page === "Suppliers" && (
-              <SuppliersPage suppliers={suppliers} setSuppliers={setSuppliers} setModal={setModal} />
+              <SuppliersPage suppliers={suppliers} setSuppliers={setSuppliers} setModal={setModal} setEntityPreview={setEntityPreview} />
             )}
 
             {page === "Staff" && (
-              <StaffPage staff={staff} setStaff={setStaff} setModal={setModal} />
+              <StaffPage staff={staff} setStaff={setStaff} setModal={setModal} setEntityPreview={setEntityPreview} />
             )}
 
             {(page === "New Quotation" || page === "All Quotations" || page === "Quotations") && (
@@ -1278,6 +1343,7 @@ const netCash = totalPaid - totalExpenses;
                 transactions={transactions}
                 setTransactions={setTransactions}
                 jobs={jobs}
+                navigate={navigate}
               />
             )}
 
@@ -1288,6 +1354,10 @@ const netCash = totalPaid - totalExpenses;
             )}
           </div>
         </main>
+
+        {entityPreview && (
+          <EntityPreviewModal entity={entityPreview} close={() => setEntityPreview(null)} />
+        )}
 
         {selectedJob && (
           <JobDetailsDrawer
@@ -2092,6 +2162,7 @@ function JobDetailsDrawer({
 function CustomersPage({
   customers,
   setModal,
+  setEntityPreview,
 }) {
   return (
     <>
@@ -2115,9 +2186,14 @@ function CustomersPage({
                   .slice(0, 2)}
               </div>
 
-              <button className="dots">
-                <MoreHorizontal size={17} />
-              </button>
+              <div className="card-actions">
+                <button type="button" className="row-action" onClick={() => setEntityPreview?.({ type: "Customer", ...customer })} title="View customer">
+                  <Eye size={16} />
+                </button>
+                <button type="button" className="dots" onClick={() => setEntityPreview?.({ type: "Customer", ...customer })} title="Customer options">
+                  <MoreHorizontal size={17} />
+                </button>
+              </div>
             </div>
 
             <h3>{customer.name}</h3>
@@ -2220,7 +2296,7 @@ function MaterialsPage({
    SUPPLIERS
 ============================================================ */
 
-function SuppliersPage({ suppliers, setSuppliers, setModal }) {
+function SuppliersPage({ suppliers, setSuppliers, setModal, setEntityPreview }) {
   return (
     <>
       <PageTitle
@@ -2249,7 +2325,7 @@ function SuppliersPage({ suppliers, setSuppliers, setModal }) {
             <span>{supplier.phone}</span>
             <span>{supplier.material}</span>
             <strong>{money(supplier.balance)}</strong>
-            <button className="row-action" type="button">
+            <button className="row-action" type="button" onClick={() => setEntityPreview?.({ type: "Supplier", ...supplier })} title="View supplier">
               <Eye size={16} />
             </button>
           </div>
@@ -2263,7 +2339,7 @@ function SuppliersPage({ suppliers, setSuppliers, setModal }) {
    STAFF
 ============================================================ */
 
-function StaffPage({ staff, setStaff, setModal }) {
+function StaffPage({ staff, setStaff, setModal, setEntityPreview }) {
   return (
     <>
       <PageTitle
@@ -2283,9 +2359,10 @@ function StaffPage({ staff, setStaff, setModal }) {
             <h3>{person.name}</h3>
             <p>{person.role}</p>
             <span>{person.phone}</span>
-            <label className={person.status === "Active" ? "staff-active" : "staff-leave"}>
-              {person.status}
-            </label>
+            <div className="staff-card-footer">
+              <label className={person.status === "Active" ? "staff-active" : "staff-leave"}>{person.status}</label>
+              <button type="button" className="row-action" onClick={() => setEntityPreview?.({ type: "Staff", ...person })} title="View staff member"><Eye size={15}/></button>
+            </div>
           </div>
         ))}
       </div>
@@ -2332,6 +2409,10 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
   return (
     <>
       <PageTitle eyebrow="BILLING · UAE" title={page === "Billing" ? "Billing" : page} subtitle="Invoices, payments and customer billing in AED." />
+      <div className="billing-action-strip">
+        <div><span>PRINT CENTER</span><strong>Separate document controls</strong><small>Print invoices and customer receipts independently.</small></div>
+        <div><button type="button" className="secondary-button" onClick={()=>window.print()}><Printer size={14}/> Print current view</button><button type="button" className="secondary-button" onClick={()=>window.print()}><ReceiptText size={14}/> Print receipt</button></div>
+      </div>
 
       {page === "Billing" && (
         <div className={`billing-machine ${billPrinting ? "is-printing" : ""}`} key={billRun}>
@@ -2528,10 +2609,17 @@ function ReportsPage({
   return (
     <>
       <PageTitle
-        eyebrow="FINANCE"
-        title="Reports"
-        subtitle="Understand workshop performance, revenue and daily expenses."
+        eyebrow="FINANCE · ANALYTICS"
+        title="Reports & Insights"
+        subtitle="Understand revenue, collections, expenses and financial movement."
       />
+      <div className="report-toolbar">
+        <div><span>LIVE DATA</span><strong>Financial overview</strong><small>Generated from current billing and account records.</small></div>
+        <div className="report-toolbar-actions">
+          <button type="button" className="secondary-button" onClick={() => window.print()}><Printer size={15}/> Print Report</button>
+          <button type="button" className="secondary-button" onClick={() => { const rows=["Metric,Amount","Total Revenue,"+total,"Payments Collected,"+totalPaid,"Outstanding,"+outstanding,"Expenses,"+totalExpenses,"Net Cash Movement,"+netCash].join("\n"); const blob=new Blob([rows],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="al-kanz-report.csv"; a.click(); URL.revokeObjectURL(a.href); }}><Download size={15}/> Export CSV</button>
+        </div>
+      </div>
 
       <div className="report-grid">
         <ReportBox icon={TrendingUp} title="Total Revenue" value={money(total)} note="Total value of workshop jobs" />
@@ -2603,7 +2691,7 @@ function ReportBox({
    ACCOUNTS
 ============================================================ */
 
-function AccountsPage({ page, totalPaid, outstanding, expenses = [], setExpenses, transfers = [], setTransfers, transactions = [], setTransactions, jobs = [] }) {
+function AccountsPage({ page, totalPaid, outstanding, expenses = [], setExpenses, transfers = [], setTransfers, transactions = [], setTransactions, jobs = [], navigate }) {
   const [expenseForm, setExpenseForm] = useState({category:"Workshop",description:"",amount:"",account:"Cash",reference:""});
   const [transferForm, setTransferForm] = useState({from_account:"Cash",to_account:"Bank",amount:"",reference:""});
 
@@ -2645,7 +2733,7 @@ function AccountsPage({ page, totalPaid, outstanding, expenses = [], setExpenses
     <>
       <PageTitle eyebrow="FINANCE · UAE" title={page} subtitle="Manage workshop income, expenses and money movement in AED." />
       <div className="account-tabs">
-        {['Accounts','Ledger','Expenses','Move Money'].map(x=><button key={x} className={page===x?'active':''}>{x}</button>)}
+        {['Accounts','Ledger','Expenses','Move Money'].map(x=><button type="button" key={x} className={page===x?'active':''} onClick={()=>navigate?.(x)}>{x}</button>)}
       </div>
       <div className="account-overview">
         <div className="account-big-card"><span>Customer Receivables</span><strong>{money(outstanding)}</strong><small>Outstanding invoices</small></div>
@@ -2784,9 +2872,12 @@ function SettingsPage({ page, theme, setTheme }) {
       </div>}
 
       {activeTab === "profile" && <div className="card appearance-card">
-        <CardHeader eyebrow="APPEARANCE" title="Choose your theme" subtitle="Default keeps the Al Kanz look; Dark changes the complete workspace." />
-        <div className="theme-options">
-          {["default","light","dark"].map(t=><button type="button" key={t} className={`theme-option ${theme===t?"active":""}`} onClick={()=>setTheme(t)}><span className={`theme-preview theme-preview-${t}`}/><div><strong>{t[0].toUpperCase()+t.slice(1)}</strong><small>{t==="default"?"Al Kanz green":t==="light"?"Bright workspace":"Full dark workspace"}</small></div>{theme===t&&<CheckCircle2 size={17}/>}</button>)}
+        <CardHeader eyebrow="APPEARANCE" title="Choose your workspace" subtitle="Switch between Day and Night. The choice is remembered on this device." />
+        <div className="theme-options theme-options-two">
+          {[
+            ["day","Day","Bright Al Kanz workspace"],
+            ["night","Night","Low-light dark workspace"],
+          ].map(([t,label,desc])=><button type="button" key={t} className={`theme-option ${theme===t?"active":""}`} onClick={()=>setTheme(t)}><span className={`theme-preview theme-preview-${t}`}/><div><strong>{label}</strong><small>{desc}</small></div>{theme===t&&<CheckCircle2 size={17}/>}</button>)}
         </div>
       </div>}
     </div>
@@ -2813,11 +2904,24 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
   });
   const [showForm, setShowForm] = useState(page === "New Quotation");
   const [selectedQuote, setSelectedQuote] = useState(null);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
 
   const safeQuotations = Array.isArray(quotations) ? quotations : [];
   const subtotal = Number(form.quantity || 0) * Number(form.unitPrice || 0);
   const vat = subtotal * 0.05;
   const grandTotal = subtotal + vat;
+
+  const runQuotationAI = () => {
+    const item = form.item || "your upholstery service";
+    const customer = form.customer || "the customer";
+    const tips = [
+      `Suggested scope: Inspect ${item}, confirm material/colour, complete the upholstery work, quality-check the finish and hand over after approval.`,
+      `Pricing tip: keep the quotation itemized and show labour, materials, VAT and the final total separately.`,
+      `Customer note: ${customer} should approve the quotation before the work is converted into an invoice.`,
+    ];
+    setAiText(tips.join(" "));
+  };
 
   const save = () => {
     if (!form.customer || !form.item || !form.unitPrice) {
@@ -2863,7 +2967,12 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
               <label>Unit Price (AED)<input type="number" min="0" value={form.unitPrice} onChange={e=>setForm({...form,unitPrice:e.target.value})} placeholder="0.00" /></label>
               <label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label>
               <label className="full-field">Description<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Work included, materials, terms..." rows="4" /></label>
-              <div className="settings-form-actions full-field"><button type="button" className="primary-button" onClick={save}><Save size={16}/> Save Quotation</button><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button></div>
+              <div className="quotation-ai-box full-field">
+                <div><Sparkles size={17}/><div><strong>AI quotation helper</strong><small>Generate a professional scope and pricing reminder from your form.</small></div></div>
+                <button type="button" className="secondary-button" onClick={runQuotationAI}><Sparkles size={15}/> Help me</button>
+                {aiText && <p>{aiText}</p>}
+              </div>
+              <div className="settings-form-actions full-field quotation-action-bar"><button type="button" className="primary-button" onClick={save}><Save size={16}/> Save Quotation</button><button type="button" className="secondary-button" onClick={()=>setPrintOpen(true)}><Printer size={16}/> Print Options</button><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button></div>
             </div>
           </div>
 
@@ -2902,12 +3011,76 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
             <div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{selectedQuote.customer}</strong><span>{selectedQuote.phone || "—"}</span></div></div>
             <div className="invoice-items"><div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div><div className="invoice-item-row"><span><strong>{selectedQuote.item}</strong><small>{selectedQuote.description || "—"}</small></span><span>{selectedQuote.quantity}</span><span>{money(selectedQuote.unitPrice)}</span><strong>{money(selectedQuote.subtotal)}</strong></div></div>
             <div className="document-totals"><div><span>Subtotal</span><strong>{money(selectedQuote.subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(selectedQuote.vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(selectedQuote.amount)}</strong></div></div>
-            <div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print Quotation</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div>
+            <div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print Quotation</button><button className="secondary-button" onClick={()=>setPrintOpen(true)}><SlidersHorizontal size={16}/> Print Options</button><button className="secondary-button" onClick={()=>{ const copy={...selectedQuote,id:`QT-${String(Date.now()).slice(-6)}`,status:"Draft",date:new Date().toLocaleDateString("en-AE")}; setQuotations(prev=>[copy,...prev]); setSelectedQuote(copy); }}><RefreshCw size={16}/> Duplicate</button><button className="secondary-button" onClick={()=>{ setSelectedQuote(null); setShowForm(true); setForm({customer:selectedQuote.customer,phone:selectedQuote.phone||"",item:selectedQuote.item,description:selectedQuote.description||"",quantity:String(selectedQuote.quantity||1),unitPrice:String(selectedQuote.unitPrice||0),validity:selectedQuote.validity||"30 days"}); }}> <Edit3 size={16}/> Edit</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div>
           </div>
         </div>
       )}
+
+      {printOpen && (
+        <PrintOptionsModal
+          title="Quotation printing"
+          close={() => setPrintOpen(false)}
+          options={[
+            ["Print quotation", "Clean customer-facing quotation", () => window.print()],
+            ["Print customer copy", "Print another copy for the customer file", () => window.print()],
+            ["Print internal copy", "Print a copy for workshop records", () => window.print()],
+          ]}
+        />
+      )}
     </>
   );
+}
+
+/* ============================================================
+   SMART SEARCH / AI / PREVIEW / PRINT HELPERS
+============================================================ */
+
+function AIHelpPanel({ page, totalPaid, outstanding, expenses = [], quotations = [], navigate, close }) {
+  const tips = page === "Billing" || page === "Transactions" || page === "Invoices" || page === "Payments"
+    ? [
+        ["Review outstanding", `There is ${money(outstanding)} still pending. Open Billing to review invoices.`, "Billing"],
+        ["Check transactions", "Review income, expenses and transfers in one ledger.", "Transactions"],
+        ["Record a payment", "Keep customer balances synchronized after every payment.", "Payments"],
+      ]
+    : page === "Reports"
+      ? [
+          ["Analyze expenses", `Current recorded expenses are ${money(expenses.reduce((a,b)=>a+Number(b.amount||0),0))}.`, "Expenses"],
+          ["Check collections", `Customer collections currently total ${money(totalPaid)}.`, "Billing"],
+          ["Export report", "Use Export CSV or Print Report from the Reports toolbar.", "Reports"],
+        ]
+      : [
+          ["Create a quotation", "Prepare an invoice-style estimate with VAT, validity and customer details.", "New Quotation"],
+          ["Review quotations", `${quotations.length} quotation${quotations.length===1?"":"s"} are saved on this device.`, "All Quotations"],
+          ["Open dashboard", "See collection, outstanding balances and financial activity at a glance.", "Dashboard"],
+        ];
+  return <div className="ai-panel">
+    <div className="ai-panel-head"><div><span><Sparkles size={14}/> AI WORKSPACE HELP</span><h3>Smart next steps</h3><p>Automated guidance based on the current screen and saved records.</p></div><button type="button" onClick={close}><X size={16}/></button></div>
+    <div className="ai-suggestions">{tips.map(([title,text,target],i)=><button type="button" key={title} onClick={()=>navigate(target)}><span className="ai-suggestion-number">0{i+1}</span><span><strong>{title}</strong><small>{text}</small></span><ArrowUpRight size={15}/></button>)}</div>
+  </div>;
+}
+
+function EntityPreviewModal({ entity, close }) {
+  const fields = Object.entries(entity || {}).filter(([k,v]) => !["type","id","$id","$createdAt","$updatedAt"].includes(k) && v !== undefined && v !== null && typeof v !== "object");
+  return <div className="modal-backdrop" onMouseDown={(e)=>{if(e.target===e.currentTarget)close();}}>
+    <div className="card entity-preview-modal">
+      <button type="button" className="modal-close" onClick={close} aria-label="Close"><X size={17}/></button>
+      <span className="eyebrow">{entity.type || "RECORD"}</span>
+      <h2>{entity.name || entity.customer || entity.id || "Record details"}</h2>
+      <p className="entity-preview-subtitle">Read-only record preview. Changes can be made from the relevant section.</p>
+      <div className="entity-preview-grid">{fields.map(([key,value])=><div key={key}><small>{key.replaceAll("_"," ").toUpperCase()}</small><strong>{String(value)}</strong></div>)}</div>
+      <div className="document-actions"><button type="button" className="secondary-button" onClick={close}>Close</button></div>
+    </div>
+  </div>;
+}
+
+function PrintOptionsModal({ title, close, options = [] }) {
+  return <div className="modal-backdrop" onMouseDown={(e)=>{if(e.target===e.currentTarget)close();}}>
+    <div className="card print-options-modal">
+      <button type="button" className="modal-close" onClick={close}><X size={17}/></button>
+      <span className="eyebrow">PRINT CENTER</span><h2>{title}</h2><p>Choose exactly which document copy you want to send to the browser printer.</p>
+      <div className="print-option-list">{options.map(([label,desc,action])=><button type="button" key={label} onClick={()=>{action();close();}}><span className="print-option-icon"><Printer size={17}/></span><span><strong>{label}</strong><small>{desc}</small></span><ArrowUpRight size={15}/></button>)}</div>
+    </div>
+  </div>;
 }
 
 /* ============================================================
@@ -7131,6 +7304,182 @@ const AL_KANZ_FULL_MOTION_CSS = `
 @media(max-width:850px){.sidebar.sidebar-open{animation:mobileSidebarIn .42s var(--motion-ease) both}@keyframes mobileSidebarIn{from{transform:translateX(-102%)}to{transform:translateX(0)}}.page-motion{animation-duration:.42s}.card:hover,.stat-card:hover,.chart-card:hover,.report-card:hover,.reports-chart-card:hover,.customer-card:hover,.material-card:hover,.staff-card:hover,.jobs-modern-card:hover,.table-card:hover,.settings-card:hover,.appearance-card:hover,.account-big-card:hover,.daily-expense-card:hover,.quotation-form-card:hover,.billing-transactions-card:hover{transform:translateY(-2px)}}
 .app.theme-dark::before{background:radial-gradient(circle at 18% 18%,rgba(89,196,161,.08),transparent 24%),radial-gradient(circle at 82% 30%,rgba(183,222,116,.055),transparent 22%),radial-gradient(circle at 55% 88%,rgba(69,157,132,.055),transparent 25%)}.app.theme-dark .topbar::after{background:linear-gradient(90deg,transparent,#73d4b2,transparent)}
 @media(prefers-reduced-motion:reduce){.app::before,.topbar::after,.page-motion,.page-motion>*,.nav-group,.sub-menu,.hero::after,.hero-ring,.hero-sofa,.stat-card strong,.billing-machine::before,.billing-transfer-animation-v2 .wave-track span,.admin-dropdown,.notification-popover,.modal-backdrop,.modal-overlay,.modal,.field,.notification i,.notification.active svg,.report-chart path,.chart-card path,.loading,.skeleton,.sidebar-overlay,.sidebar.sidebar-open{animation:none!important}.card,.stat-card,.chart-card,.report-card,.reports-chart-card,.customer-card,.material-card,.staff-card,.jobs-modern-card,.table-card,.settings-card,.appearance-card,.account-big-card,.daily-expense-card,.quotation-form-card,.billing-transactions-card,.nav-item,.primary-button,.secondary-button,.hero-actions button,.create-bill-button,.job-payment-button,.jobs-new-button,.filter-button,.text-button{transition:none!important}}
+
+
+/* ============================================================
+   AL KANZ FINAL UX PASS — DAY/NIGHT + REAL CONTROLS + MOBILE
+============================================================ */
+.app.theme-day {
+  --bg:#f3f8f7; --white:#ffffff; --soft:#f8fbfa; --green:#146b5e; --green-dark:#0b4d43;
+  --green-light:#e4f4ef; --sidebar:#0a3f38; --sidebar-2:#115348; --sidebar-text:#bcd6d0;
+  --text:#14282a; --text-2:#53686b; --muted:#87999b; --border:#dce8e6;
+  --shadow:0 18px 45px rgba(14,67,58,.08);
+}
+.app.theme-night { color-scheme:dark; }
+.app.theme-night .global-search-results,.app.theme-night .ai-panel,.app.theme-night .entity-preview-modal,.app.theme-night .print-options-modal { background:#101b18; border-color:#2b403a; color:#eef7f3; }
+.app.theme-night .search-result,.app.theme-night .ai-suggestions button,.app.theme-night .print-option-list button { color:#e5f0ed; border-color:#263a35; }
+.app.theme-night .search-result:hover,.app.theme-night .ai-suggestions button:hover,.app.theme-night .print-option-list button:hover { background:#173028; }
+.app.theme-night .report-toolbar { background:linear-gradient(135deg,#10251f,#0c1a17); border-color:#2b403a; }
+.app.theme-night .report-toolbar strong,.app.theme-night .report-toolbar small { color:#edf6f2; }
+.app.theme-night .quotation-ai-box { background:#12261f; border-color:#2c4a40; }
+.app.theme-night .quotation-ai-box p { color:#b8ccc6; }
+.app.theme-night .theme-option { background:#101b18 !important; }
+.app.theme-night .theme-preview-day { background:linear-gradient(135deg,#fff 0 50%,#dff2ec 50%); }
+
+/* Day/Night previews */
+.theme-preview-day { background:linear-gradient(135deg,#ffffff 0 50%,#cfece4 50%); }
+.theme-preview-night { background:linear-gradient(135deg,#091714 0 50%,#62c7a7 50%); }
+.theme-options-two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+
+/* Smart search */
+.global-search-wrap { position:relative; min-width:0; }
+.global-search { min-width:260px; }
+.search-clear { margin-left:auto; width:24px; height:24px; border-radius:7px; display:grid; place-items:center; background:transparent; color:var(--muted); }
+.search-clear:hover { background:var(--green-light); color:var(--green); }
+.global-search-results { position:absolute; top:calc(100% + 9px); right:0; width:min(430px,calc(100vw - 28px)); background:var(--white); border:1px solid var(--border); border-radius:16px; box-shadow:0 22px 60px rgba(15,48,43,.18); padding:8px; z-index:120; animation:searchDrop .22s ease both; }
+.search-results-head { display:flex; justify-content:space-between; padding:8px 10px; color:var(--muted); font-size:8px; font-weight:900; letter-spacing:1.3px; }
+.search-result { width:100%; display:grid; grid-template-columns:32px 1fr 18px; align-items:center; gap:9px; text-align:left; padding:10px; border-radius:11px; background:transparent; color:var(--text); }
+.search-result:hover { background:var(--soft); }
+.search-result-icon { width:30px; height:30px; display:grid; place-items:center; border-radius:9px; background:var(--green-light); color:var(--green); }
+.search-result strong,.search-result small { display:block; }
+.search-result strong { font-size:10px; }
+.search-result small { margin-top:3px; color:var(--muted); font-size:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.search-empty { display:grid; justify-items:center; gap:5px; padding:24px 12px; color:var(--muted); }
+.search-empty strong { color:var(--text); font-size:11px; }
+.search-empty span { font-size:9px; }
+@keyframes searchDrop { from { opacity:0; transform:translateY(-6px) scale(.98); } to { opacity:1; transform:none; } }
+
+/* AI */
+.ai-help-button { height:36px; display:flex; align-items:center; gap:7px; padding:0 11px; border-radius:10px; background:var(--green-light); color:var(--green); font-size:10px; font-weight:800; transition:.25s ease; }
+.ai-help-button:hover,.ai-help-button.active { transform:translateY(-1px); box-shadow:0 9px 20px rgba(20,107,94,.13); }
+.ai-panel { position:fixed; top:74px; right:22px; width:min(410px,calc(100vw - 30px)); background:var(--white); color:var(--text); border:1px solid var(--border); border-radius:18px; box-shadow:0 25px 70px rgba(12,50,44,.22); z-index:110; padding:15px; animation:aiPanelIn .3s cubic-bezier(.2,.8,.2,1) both; }
+.ai-panel-head { display:flex; justify-content:space-between; gap:14px; padding:3px 3px 13px; }
+.ai-panel-head > div > span { display:flex; align-items:center; gap:5px; color:var(--green); font-size:8px; font-weight:900; letter-spacing:1.2px; }
+.ai-panel-head h3 { margin-top:6px; font-size:16px; }
+.ai-panel-head p { margin-top:4px; color:var(--muted); font-size:9px; line-height:1.5; }
+.ai-panel-head > button { width:28px; height:28px; border-radius:8px; background:var(--soft); color:var(--muted); }
+.ai-suggestions { display:grid; gap:7px; }
+.ai-suggestions button { width:100%; display:grid; grid-template-columns:31px 1fr 16px; align-items:center; gap:9px; text-align:left; padding:10px; border:1px solid var(--border); border-radius:11px; background:var(--soft); color:var(--text); }
+.ai-suggestions button:hover { border-color:var(--green); transform:translateX(2px); }
+.ai-suggestions strong,.ai-suggestions small { display:block; }
+.ai-suggestions strong { font-size:10px; }
+.ai-suggestions small { margin-top:3px; color:var(--muted); font-size:8px; line-height:1.45; }
+.ai-suggestion-number { width:28px; height:28px; display:grid; place-items:center; border-radius:8px; background:var(--green-light); color:var(--green); font-size:8px; font-weight:900; }
+@keyframes aiPanelIn { from{opacity:0;transform:translateY(-9px) scale(.98)} to{opacity:1;transform:none} }
+
+/* Dashboard redesign */
+.page-heading { position:relative; padding:7px 0 18px; }
+.page-heading::after { content:""; position:absolute; right:0; top:0; width:180px; height:100px; border-radius:50%; background:radial-gradient(circle,rgba(113,211,178,.16),transparent 68%); pointer-events:none; }
+.page-heading h1 { font-size:32px; letter-spacing:-1.3px; }
+.hero { min-height:275px; border-radius:24px; box-shadow:0 22px 55px rgba(11,75,65,.18); }
+.hero-text h2 { font-size:36px; line-height:1.05; letter-spacing:-1.4px; }
+.hero-visual { transform:scale(1.08); }
+.stats { gap:14px; }
+.stat-card { border-radius:17px; min-height:112px; }
+.two-column > .card { border-radius:20px; }
+.card-header h2 { letter-spacing:-.45px; }
+
+/* Eye/view controls always visibly clickable */
+.row-action,.dots { cursor:pointer !important; }
+.row-action { transition:transform .2s ease,background .2s ease,box-shadow .2s ease; }
+.row-action:hover { transform:translateY(-2px) scale(1.04); box-shadow:0 8px 18px rgba(20,107,94,.12); }
+.card-actions { display:flex; gap:5px; align-items:center; }
+.staff-card-footer { display:flex; align-items:center; justify-content:space-between; margin-top:10px; }
+
+/* Quotation */
+.quotation-action-bar { flex-wrap:wrap; }
+.quotation-ai-box { grid-column:1/-1; padding:12px; border:1px solid #d7e9e4; background:#f1f8f6; border-radius:13px; }
+.quotation-ai-box > div { display:flex; align-items:center; gap:9px; color:var(--green); }
+.quotation-ai-box strong,.quotation-ai-box small { display:block; }
+.quotation-ai-box strong { color:var(--text); font-size:10px; }
+.quotation-ai-box small { margin-top:2px; color:var(--muted); font-size:8px; }
+.quotation-ai-box > button { margin-top:9px; }
+.quotation-ai-box p { margin-top:9px; padding-top:9px; border-top:1px dashed var(--border); color:var(--text-2); font-size:9px; line-height:1.6; }
+.print-options-modal,.entity-preview-modal { position:relative; width:min(560px,94vw); padding:25px; }
+.print-options-modal > h2,.entity-preview-modal > h2 { margin:7px 0 5px; font-size:21px; }
+.print-options-modal > p,.entity-preview-subtitle { color:var(--text-2); font-size:10px; line-height:1.6; }
+.print-option-list { margin-top:18px; display:grid; gap:8px; }
+.print-option-list button { display:grid; grid-template-columns:38px 1fr 16px; gap:10px; align-items:center; padding:12px; border:1px solid var(--border); border-radius:12px; background:var(--soft); color:var(--text); text-align:left; transition:.2s ease; }
+.print-option-list button:hover { transform:translateX(3px); border-color:var(--green); }
+.print-option-icon { width:36px; height:36px; display:grid; place-items:center; border-radius:10px; background:var(--green-light); color:var(--green); }
+.print-option-list strong,.print-option-list small { display:block; }
+.print-option-list strong { font-size:10px; }
+.print-option-list small { margin-top:3px; color:var(--muted); font-size:8px; }
+.entity-preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-top:18px; }
+.entity-preview-grid > div { padding:11px; border:1px solid var(--border); border-radius:10px; background:var(--soft); }
+.entity-preview-grid small,.entity-preview-grid strong { display:block; }
+.entity-preview-grid small { color:var(--muted); font-size:7px; letter-spacing:.8px; }
+.entity-preview-grid strong { margin-top:5px; font-size:10px; overflow-wrap:anywhere; }
+
+/* Reports */
+.report-toolbar { margin:0 0 16px; padding:15px 17px; border:1px solid var(--border); border-radius:16px; background:linear-gradient(135deg,#fafffd,#eef8f5); display:flex; align-items:center; justify-content:space-between; gap:15px; }
+.report-toolbar span,.report-toolbar strong,.report-toolbar small { display:block; }
+.report-toolbar span { font-size:7px; letter-spacing:1.4px; color:var(--green); font-weight:900; }
+.report-toolbar strong { margin-top:4px; font-size:12px; }
+.report-toolbar small { margin-top:3px; color:var(--muted); font-size:8px; }
+.report-toolbar-actions { display:flex; gap:8px; flex-wrap:wrap; }
+
+/* Buttons: every interactive control gives feedback */
+button { -webkit-tap-highlight-color:transparent; }
+button:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
+
+/* Compact mobile sidebar with icon + small label */
+@media(max-width:850px){
+  .ai-help-button span { display:none; }
+  .ai-help-button { width:36px; padding:0; justify-content:center; }
+  .topbar-right { gap:6px; }
+}
+@media(max-width:600px){
+  .sidebar { width:218px !important; }
+  .brand-area { padding:15px 12px 12px !important; }
+  .brand-logo { width:34px !important; height:34px !important; }
+  .brand { gap:8px !important; }
+  .brand strong { font-size:10px !important; }
+  .brand span { font-size:6px !important; letter-spacing:1px !important; }
+  .workshop-status { margin:7px 9px !important; height:31px !important; font-size:8px !important; }
+  .nav-scroll { padding:8px 8px 14px !important; }
+  .nav-section-title { font-size:6px !important; letter-spacing:1.2px !important; padding:8px 8px 5px !important; }
+  .nav-item { min-height:32px !important; padding:0 8px !important; border-radius:8px !important; font-size:9px !important; gap:8px !important; }
+  .nav-item svg { width:15px !important; height:15px !important; flex:0 0 15px !important; }
+  .nav-item > svg:last-child { width:12px !important; }
+  .sub-menu { padding:2px 0 5px 29px !important; }
+  .sub-menu button { min-height:25px !important; font-size:8px !important; padding:0 7px !important; }
+  .account-card { padding:8px !important; gap:7px !important; }
+  .account-avatar { width:27px !important; height:27px !important; font-size:8px !important; }
+  .account-card strong { font-size:8px !important; }
+  .account-card span { font-size:7px !important; }
+  .logout { font-size:8px !important; }
+  .page-heading h1 { font-size:24px !important; }
+  .hero-text h2 { font-size:27px !important; }
+  .hero { min-height:250px !important; border-radius:18px !important; }
+  .report-toolbar { align-items:flex-start; flex-direction:column; }
+  .report-toolbar-actions { width:100%; }
+  .report-toolbar-actions button { flex:1; }
+  .theme-options-two { grid-template-columns:1fr; }
+  .entity-preview-grid { grid-template-columns:1fr; }
+  .global-search { min-width:0 !important; width:100%; }
+  .global-search-wrap { flex:1; }
+  .global-search-results { right:auto; left:0; }
+}
+@media(max-width:480px){
+  .topbar { gap:6px !important; }
+  .breadcrumb { display:none !important; }
+  .topbar-right { flex:1; }
+  .global-search input { font-size:9px !important; }
+  .global-search { height:34px !important; }
+  .notification,.admin-profile,.ai-help-button { height:34px !important; }
+  .admin-profile section { display:none !important; }
+  .admin-profile { width:34px !important; padding:0 !important; justify-content:center !important; }
+}
+
+.billing-action-strip{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 16px;padding:12px 15px;border:1px solid var(--border);border-radius:14px;background:var(--soft);}
+.billing-action-strip span,.billing-action-strip strong,.billing-action-strip small{display:block}.billing-action-strip span{font-size:7px;letter-spacing:1.3px;color:var(--green);font-weight:900}.billing-action-strip strong{font-size:10px;margin-top:3px}.billing-action-strip small{font-size:8px;color:var(--muted);margin-top:2px}.billing-action-strip>div:last-child{display:flex;gap:7px;flex-wrap:wrap}
+.app.theme-night .billing-action-strip{background:#101b18;border-color:#2b403a}.app.theme-night .billing-action-strip strong{color:#edf7f3}
+@media(max-width:600px){.billing-action-strip{align-items:flex-start;flex-direction:column}.billing-action-strip>div:last-child{width:100%}.billing-action-strip .secondary-button{flex:1}}
+
+@media(prefers-reduced-motion:reduce){
+  .ai-panel,.global-search-results { animation:none !important; }
+}
 `;
 
 const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX + AL_KANZ_FULL_MOTION_CSS;
