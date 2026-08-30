@@ -1253,6 +1253,7 @@ const netCash = totalPaid - totalExpenses;
                 page={page}
                 jobs={jobs}
                 payments={payments}
+                transactions={transactions}
                 outstanding={outstanding}
                 totalPaid={totalPaid}
                 recordPayment={recordPayment}
@@ -2447,7 +2448,7 @@ function StaffPage({ staff, setStaff, setModal }) {
    BILLING
 ============================================================ */
 
-function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, recordPayment }) {
+function BillingPage({ page, jobs, payments = [], transactions = [], outstanding, totalPaid, recordPayment }) {
   const invoices = jobs.map((job) => ({
     id: `INV-${String(job.id).replace("AK-", "")}`,
     customer: job.customer,
@@ -2528,18 +2529,7 @@ function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, record
       </div>
 
       {page === "Transactions" ? (
-        <div className="table-card">
-          <div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>
-          {payments.length ? payments.map((pay, i) => (
-            <div className="table-row" key={pay.id || i}>
-              <span>{pay.paid_at ? new Date(pay.paid_at).toLocaleDateString("en-AE") : "—"}</span>
-              <strong>{pay.notes || `Payment · ${pay.customer || "Customer"}`}</strong>
-              <Status status="Income" />
-              <span>{pay.payment_method || "Cash"}</span>
-              <strong className="income">+{money(pay.amount)}</strong>
-            </div>
-          )) : <EmptyState icon={ReceiptText} title="No transactions yet" text="Customer payments will appear here." />}
-        </div>
+        <TransactionTable transactions={transactions} payments={payments} />
       ) : page !== "Payments" ? (
         <div className="table-card">
           <div className="table-head invoice-head"><span>INVOICE</span><span>CUSTOMER</span><span>JOB / ITEM</span><span>AMOUNT</span><span>PAID</span><span>BALANCE</span><span>STATUS</span><span /></div>
@@ -2597,6 +2587,64 @@ function BillingPage({ page, jobs, payments = [], outstanding, totalPaid, record
         </div>
       )}
     </>
+  );
+}
+
+function TransactionTable({ transactions = [], payments = [] }) {
+  // Payments are also converted into transactions when a payment is recorded.
+  // If the remote transaction collection is empty (for example on a fresh
+  // Appwrite database), use the payment records so this page never appears
+  // mysteriously blank.
+  const rows = transactions.length
+    ? transactions
+    : payments.map((pay, index) => ({
+        id: pay.id || `payment-${index}`,
+        transaction_type: "Income",
+        description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
+        amount: Number(pay.amount || 0),
+        account: pay.payment_method || "Cash",
+        transaction_date: pay.paid_at,
+      }));
+
+  return (
+    <div className="table-card">
+      <div className="table-head">
+        <span>DATE</span>
+        <span>DESCRIPTION</span>
+        <span>TYPE</span>
+        <span>ACCOUNT</span>
+        <span>AMOUNT</span>
+      </div>
+
+      {rows.length ? rows.map((tx, index) => {
+        const type = tx.transaction_type || "Income";
+        const isExpense = type.toLowerCase() === "expense";
+        const isTransfer = type.toLowerCase() === "transfer";
+        const sign = isExpense ? "-" : isTransfer ? "" : "+";
+
+        return (
+          <div className="table-row" key={tx.id || index}>
+            <span>
+              {tx.transaction_date
+                ? new Date(tx.transaction_date).toLocaleDateString("en-AE")
+                : "—"}
+            </span>
+            <strong>{tx.description || "Workshop transaction"}</strong>
+            <Status status={type} />
+            <span>{tx.account || "Cash"}</span>
+            <strong className={isExpense ? "expense" : "income"}>
+              {sign}{money(tx.amount)}
+            </strong>
+          </div>
+        );
+      }) : (
+        <EmptyState
+          icon={ReceiptText}
+          title="No transactions yet"
+          text="Customer payments, expenses and transfers will appear here when recorded."
+        />
+      )}
+    </div>
   );
 }
 
