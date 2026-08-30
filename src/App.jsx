@@ -437,16 +437,6 @@ const NAVIGATION = [
         icon: LayoutDashboard,
       },
       {
-        name: "Jobs & Repairs",
-        icon: Wrench,
-        children: [
-          "New Repair Job",
-          "Active Jobs",
-          "Completed Jobs",
-          "Delivered",
-        ],
-      },
-      {
         name: "Customers",
         icon: Users,
       },
@@ -608,7 +598,7 @@ function App() {
   const [loadingData, setLoadingData] = useState(false);
   const [dbReady, setDbReady] = useState(hasSupabase);
 
-  const [openSections, setOpenSections] = useState(() => new Set(["Jobs & Repairs"]));
+  const [openSections, setOpenSections] = useState(() => new Set(["Billing", "Quotations"]));
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1188,14 +1178,15 @@ const netCash = totalPaid - totalExpenses;
             </div>
           </header>
 
-          <div className="content">
+          <div className="content page-motion" key={page} data-page={page}>
             {page === "Dashboard" && (
               <Dashboard
                 totalSales={totalSales}
-                activeJobs={activeJobs}
-                readyJobs={readyJobs}
                 outstanding={outstanding}
                 totalPaid={totalPaid}
+                totalExpenses={totalExpenses}
+                transactions={transactions}
+                quotations={quotations}
                 jobs={filteredJobs}
                 navigate={navigate}
                 setModal={setModal}
@@ -1360,253 +1351,110 @@ const netCash = totalPaid - totalExpenses;
 
 function Dashboard({
   totalSales,
-  activeJobs,
-  readyJobs,
   outstanding,
   totalPaid,
-  jobs,
+  totalExpenses = 0,
+  transactions = [],
+  quotations = [],
+  jobs = [],
   navigate,
   setModal,
 }) {
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+  const safeQuotations = Array.isArray(quotations) ? quotations : [];
+  const safeJobs = Array.isArray(jobs) ? jobs : [];
+  const invoiceCount = safeJobs.length;
+  const quotationCount = safeQuotations.length;
+  const collectionRate = totalSales > 0 ? Math.min(100, (totalPaid / totalSales) * 100) : 0;
+
   return (
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">
-            DUBAI WORKSHOP · TODAY
-          </span>
-
+          <span className="eyebrow">DUBAI WORKSHOP · BILLING</span>
           <h1>Good evening, Al Kanz.</h1>
-
-          <p>
-            Your workshop at a glance.
-          </p>
+          <p>Your billing, payments and financial activity at a glance.</p>
         </div>
-
-        <button
-          className="primary-button"
-          onClick={() => setModal("job")}
-        >
+        <button className="primary-button" onClick={() => navigate("New Quotation")}>
           <Plus size={17} />
-          New Repair Job
+          New Quotation
         </button>
       </div>
 
       <div className="hero">
         <div className="hero-text">
-          <span>AL KANZ WORKSHOP</span>
-
-          <h2>
-            Run your workshop.
-            <br />
-            Track every payment.
-          </h2>
-
-          <p>
-            Manage customers, materials, billing, expenses
-            and workshop performance from one place.
-          </p>
-
+          <span>AL KANZ BILLING SYSTEM</span>
+          <h2>Control every bill.<br />Track every payment.</h2>
+          <p>Manage customers, quotations, invoices, payments, expenses and financial reports from one place.</p>
           <div className="hero-actions">
-            <button onClick={() => navigate("Billing")}>
-              <Receipt size={15} />
-              Open billing
-            </button>
-
-            <button onClick={() => navigate("Reports")}>
-              View reports
-              <ArrowUpRight size={14} />
-            </button>
+            <button onClick={() => navigate("Billing")}><Receipt size={15} /> Open billing</button>
+            <button onClick={() => navigate("Reports")}>View reports <ArrowUpRight size={14} /></button>
           </div>
         </div>
-
         <div className="hero-visual">
           <div className="hero-ring ring-one" />
           <div className="hero-ring ring-two" />
-
-          <div className="hero-sofa">
-            <Sofa size={67} />
-          </div>
-
-          <div className="floating-icon icon-a">
-            <Wrench size={19} />
-          </div>
-
-          <div className="floating-icon icon-b">
-            <Scissors size={19} />
-          </div>
-
-          <div className="floating-icon icon-c">
-            <Banknote size={19} />
-          </div>
+          <div className="hero-sofa"><ReceiptText size={67} /></div>
+          <div className="floating-icon icon-a"><FileText size={19} /></div>
+          <div className="floating-icon icon-b"><CreditCard size={19} /></div>
+          <div className="floating-icon icon-c"><Banknote size={19} /></div>
         </div>
       </div>
 
       <div className="stats">
-        <Stat
-          icon={Wrench}
-          label="Active Jobs"
-          value={activeJobs}
-          note="jobs in workshop"
-          color="green"
-        />
-
-        <Stat
-          icon={CheckCircle2}
-          label="Ready for Pickup"
-          value={readyJobs}
-          note="customers to notify"
-          color="blue"
-        />
-
-        <Stat
-          icon={CircleDollarSign}
-          label="Outstanding"
-          value={money(outstanding)}
-          note="customer balances"
-          color="orange"
-        />
-
-        <Stat
-          icon={Banknote}
-          label="Collected"
-          value={money(totalPaid)}
-          note="total payments"
-          color="purple"
-        />
+        <Stat icon={FileText} label="Invoices" value={invoiceCount} note="billing records" color="blue" />
+        <Stat icon={FileText} label="Quotations" value={quotationCount} note="customer estimates" color="green" />
+        <Stat icon={CircleDollarSign} label="Outstanding" value={money(outstanding)} note="pending collection" color="orange" />
+        <Stat icon={Banknote} label="Collected" value={money(totalPaid)} note="payments received" color="purple" />
       </div>
 
       <div className="two-column">
         <div className="card">
-          <CardHeader
-            eyebrow="WORKSHOP"
-            title="Current repair jobs"
-            subtitle="What's happening in your workshop"
-            action="View all"
-            onAction={() => navigate("Active Jobs")}
-          />
-
-          <div className="job-list">
-            {jobs.slice(0, 4).map((job) => (
-              <JobCard key={job.id} job={job} />
-            ))}
-          </div>
-        </div>
-
-        <div className="card">
-          <CardHeader
-            eyebrow="SHORTCUTS"
-            title="Quick actions"
-            subtitle="Common workshop tasks"
-          />
-
-          <div className="quick-actions">
-            <QuickAction
-              icon={Wrench}
-              title="New Repair Job"
-              subtitle="Start a workshop job"
-              onClick={() => setModal("job")}
-            />
-
-            <QuickAction
-              icon={Receipt}
-              title="Create Invoice"
-              subtitle="Generate customer billing"
-            />
-
-            <QuickAction
-              icon={Users}
-              title="Add Customer"
-              subtitle="Create customer profile"
-              onClick={() => setModal("customer")}
-            />
-
-            <QuickAction
-              icon={CreditCard}
-              title="Record Payment"
-              subtitle="Record customer payment"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="two-column">
-        <div className="card">
-          <CardHeader
-            eyebrow="TODAY"
-            title="Workshop schedule"
-            subtitle="Jobs that need attention"
-          />
-
-          <Schedule
-            time="09:30 AM"
-            title="Sofa leather cutting"
-            customer="Ahmed Rahman"
-            tag="Cutting"
-          />
-
-          <Schedule
-            time="11:00 AM"
-            title="Recliner stitching"
-            customer="Nabeel Ahmed"
-            tag="Stitching"
-          />
-
-          <Schedule
-            time="02:30 PM"
-            title="Office sofa delivery"
-            customer="Sameer Khan"
-            tag="Delivery"
-          />
-
-          <Schedule
-            time="04:00 PM"
-            title="Dining chair inspection"
-            customer="Faris Traders"
-            tag="Inspection"
-          />
-        </div>
-
-        <div className="card">
-          <CardHeader
-            eyebrow="FINANCE"
-            title="Payment overview"
-            subtitle="This month's billing"
-            action="View all"
-          />
-
-          <div className="finance-number">
-            <span>Collected</span>
-            <strong>{money(totalPaid)}</strong>
-          </div>
-
-          <div className="large-progress">
-            <span style={{ width: `${Math.min(100, totalSales ? (totalPaid / totalSales) * 100 : 0)}%` }} />
-          </div>
-
-          <div className="finance-meta">
-            <span>{totalSales ? Math.round((totalPaid / totalSales) * 100) : 0}% collected</span>
-            <strong>{money(outstanding)} pending</strong>
-          </div>
-
+          <CardHeader eyebrow="BILLING" title="Payment overview" subtitle="Current collection performance" action="Open billing" onAction={() => navigate("Billing")} />
+          <div className="finance-number"><span>Collected</span><strong>{money(totalPaid)}</strong></div>
+          <div className="large-progress"><span style={{ width: `${collectionRate}%` }} /></div>
+          <div className="finance-meta"><span>{Math.round(collectionRate)}% collected</span><strong>{money(outstanding)} pending</strong></div>
           <div className="recent-payments">
-            <Payment
-              name="Ahmed Rahman"
-              amount="AED 10,000"
-              time="10 min ago"
-            />
+            <Payment name="Ahmed Rahman" amount="AED 10,000" time="10 min ago" />
+            <Payment name="Faris Traders" amount="AED 5,000" time="1 hour ago" />
+            <Payment name="Sameer Khan" amount="AED 8,000" time="2 hours ago" />
+          </div>
+        </div>
 
-            <Payment
-              name="Faris Traders"
-              amount="AED 5,000"
-              time="1 hour ago"
-            />
+        <div className="card">
+          <CardHeader eyebrow="QUICK ACTIONS" title="Billing shortcuts" subtitle="Common finance tasks" />
+          <div className="quick-actions">
+            <QuickAction icon={FileText} title="New Quotation" subtitle="Prepare a customer estimate" onClick={() => navigate("New Quotation")} />
+            <QuickAction icon={Receipt} title="Invoices" subtitle="View customer invoices" onClick={() => navigate("Invoices")} />
+            <QuickAction icon={CreditCard} title="Record Payment" subtitle="Record a customer payment" onClick={() => navigate("Payments")} />
+            <QuickAction icon={Wallet} title="Expenses" subtitle="Track daily workshop expenses" onClick={() => navigate("Expenses")} />
+          </div>
+        </div>
+      </div>
 
-            <Payment
-              name="Sameer Khan"
-              amount="AED 8,000"
-              time="2 hours ago"
-            />
+      <div className="two-column">
+        <div className="card">
+          <CardHeader eyebrow="RECENT ACTIVITY" title="Transactions" subtitle="Latest financial movements" action="View all" onAction={() => navigate("Transactions")} />
+          <div className="job-list">
+            {safeTransactions.slice(0, 4).map((tx, index) => (
+              <div className="table-row" key={tx.id || index}>
+                <strong>{tx.transaction_type || "Transaction"}</strong>
+                <span>{tx.description || "Financial transaction"}</span>
+                <strong className={String(tx.transaction_type).toLowerCase() === "expense" ? "expense" : "income"}>{money(tx.amount)}</strong>
+              </div>
+            ))}
+            {!safeTransactions.length && <EmptyState icon={Receipt} title="No transactions yet" text="Recorded payments and expenses will appear here." />}
+          </div>
+        </div>
+
+        <div className="card">
+          <CardHeader eyebrow="FINANCE" title="Daily expense snapshot" subtitle="Keep spending visible" action="View accounts" onAction={() => navigate("Accounts")} />
+          <div className="finance-number"><span>Total expenses</span><strong>{money(totalExpenses)}</strong></div>
+          <div className="billing-summary-list">
+            <div><span>Invoices</span><strong>{invoiceCount}</strong></div>
+            <div><span>Quotations</span><strong>{quotationCount}</strong></div>
+            <div><span>Collected</span><strong>{money(totalPaid)}</strong></div>
+            <div><span>Outstanding</span><strong>{money(outstanding)}</strong></div>
           </div>
         </div>
       </div>
@@ -2691,7 +2539,7 @@ function ReportsPage({
         <ReportBox icon={AlertCircle} title="Outstanding" value={money(outstanding)} note="Still to be collected" />
         <ReportBox icon={Wallet} title="Expenses" value={money(totalExpenses)} note="Workshop costs recorded" />
         <ReportBox icon={TrendingUp} title="Net Cash Movement" value={money(netCash)} note="Payments less expenses" />
-        <ReportBox icon={CheckCircle2} title="Jobs Completed" value={jobs.filter(j => j.status === "Ready" || j.status === "Delivered").length} note="Ready or delivered jobs" />
+        <ReportBox icon={CheckCircle2} title="Billing Records" value={jobs.length} note="Records available for invoicing" />
       </div>
 
       <div className="reports-chart-grid">
@@ -2953,27 +2801,113 @@ function NotificationSetting({ title, description, checked, onChange }) {
   </button>;
 }
 
-function QuotationPage({ page, quotations, setQuotations, jobs }) {
-  const [form, setForm] = useState({customer:"",phone:"",item:"",description:"",amount:"",validity:"30 days"});
+function QuotationPage({ page, quotations = [], setQuotations }) {
+  const [form, setForm] = useState({
+    customer: "",
+    phone: "",
+    item: "",
+    description: "",
+    quantity: "1",
+    unitPrice: "",
+    validity: "30 days",
+  });
   const [showForm, setShowForm] = useState(page === "New Quotation");
+  const [selectedQuote, setSelectedQuote] = useState(null);
+
+  const safeQuotations = Array.isArray(quotations) ? quotations : [];
+  const subtotal = Number(form.quantity || 0) * Number(form.unitPrice || 0);
+  const vat = subtotal * 0.05;
+  const grandTotal = subtotal + vat;
+
   const save = () => {
-    if (!form.customer || !form.item || !form.amount) { alert("Customer, item and amount are required."); return; }
-    const q={id:`QT-${String(Date.now()).slice(-6)}`,...form,amount:Number(form.amount),status:"Draft",date:new Date().toLocaleDateString("en-AE")};
-    setQuotations(prev=>[q,...prev]); setForm({customer:"",phone:"",item:"",description:"",amount:"",validity:"30 days"}); setShowForm(false);
+    if (!form.customer || !form.item || !form.unitPrice) {
+      alert("Customer, item and unit price are required.");
+      return;
+    }
+    const q = {
+      id: `QT-${String(Date.now()).slice(-6)}`,
+      ...form,
+      quantity: Number(form.quantity || 1),
+      unitPrice: Number(form.unitPrice || 0),
+      subtotal,
+      vat,
+      amount: grandTotal,
+      status: "Draft",
+      date: new Date().toLocaleDateString("en-AE"),
+    };
+    setQuotations(prev => [q, ...(Array.isArray(prev) ? prev : [])]);
+    setSelectedQuote(q);
+    setForm({ customer:"", phone:"", item:"", description:"", quantity:"1", unitPrice:"", validity:"30 days" });
+    setShowForm(false);
   };
-  return <>
-    <PageTitle eyebrow="SALES · UAE" title={page === "New Quotation" ? "New Quotation" : "Quotations"} subtitle="Prepare customer quotations in AED before converting approved work into a repair job." button={!showForm ? "New Quotation" : null} onClick={()=>setShowForm(true)} />
-    {showForm && <div className="card quotation-form-card"><CardHeader eyebrow="DEMO QUOTATION" title="Create customer quotation" subtitle="For demonstration purposes — prices are editable."/><div className="settings-form">
-      <label>Customer<input value={form.customer} onChange={e=>setForm({...form,customer:e.target.value})} placeholder="Customer name"/></label>
-      <label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+971..."/></label>
-      <label>Item / Vehicle<input value={form.item} onChange={e=>setForm({...form,item:e.target.value})} placeholder="Sofa, car seat, etc."/></label>
-      <label>Amount (AED)<input type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0.00"/></label>
-      <label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label>
-      <label>Description<input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Work included..."/></label>
-      <div className="settings-form-actions"><button type="button" className="primary-button" onClick={save}><Save size={16}/> Save Quotation</button><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button></div>
-    </div></div>}
-    {!showForm && <div className="table-card"><div className="table-head"><span>QUOTE</span><span>CUSTOMER</span><span>ITEM</span><span>AMOUNT</span><span>STATUS</span></div>{quotations.length===0?<div className="empty-state">No quotations yet. Create your first demo quotation.</div>:quotations.map(q=><div className="table-row" key={q.id}><strong>{q.id}</strong><span>{q.customer}</span><span>{q.item}</span><strong>{money(q.amount)}</strong><Status status={q.status}/></div>)}</div>}
-  </>;
+
+  return (
+    <>
+      <PageTitle
+        eyebrow="SALES · UAE"
+        title={page === "New Quotation" ? "New Quotation" : "Quotations"}
+        subtitle="Create professional quotations using the same clean document structure as an invoice."
+        button={!showForm ? "New Quotation" : null}
+        onClick={() => setShowForm(true)}
+      />
+
+      {showForm && (
+        <div className="quotation-invoice-layout">
+          <div className="card quotation-form-card">
+            <CardHeader eyebrow="QUOTATION DETAILS" title="Create quotation" subtitle="Demo quotation — prices can be edited before saving." />
+            <div className="settings-form">
+              <label>Customer<input value={form.customer} onChange={e=>setForm({...form,customer:e.target.value})} placeholder="Customer name" /></label>
+              <label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+971..." /></label>
+              <label>Item / Service<input value={form.item} onChange={e=>setForm({...form,item:e.target.value})} placeholder="Sofa upholstery, car seat, etc." /></label>
+              <label>Quantity<input type="number" min="1" value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})} /></label>
+              <label>Unit Price (AED)<input type="number" min="0" value={form.unitPrice} onChange={e=>setForm({...form,unitPrice:e.target.value})} placeholder="0.00" /></label>
+              <label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label>
+              <label className="full-field">Description<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Work included, materials, terms..." rows="4" /></label>
+              <div className="settings-form-actions full-field"><button type="button" className="primary-button" onClick={save}><Save size={16}/> Save Quotation</button><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button></div>
+            </div>
+          </div>
+
+          <div className="card quotation-document">
+            <div className="invoice-document-head">
+              <div><span className="eyebrow">AL KANZ UPHOLSTERY</span><h2>QUOTATION</h2><p>Dubai, UAE · AED</p></div>
+              <div className="document-number"><strong>QT-PREVIEW</strong><span>Date: {new Date().toLocaleDateString("en-AE")}</span><span>Valid: {form.validity}</span></div>
+            </div>
+            <div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{form.customer || "Customer Name"}</strong><span>{form.phone || "Customer phone"}</span></div></div>
+            <div className="invoice-items">
+              <div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div>
+              <div className="invoice-item-row"><span><strong>{form.item || "Item / Service"}</strong><small>{form.description || "Description of proposed work"}</small></span><span>{form.quantity || 1}</span><span>{money(form.unitPrice)}</span><strong>{money(subtotal)}</strong></div>
+            </div>
+            <div className="document-totals"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(grandTotal)}</strong></div></div>
+            <div className="document-note"><strong>Quotation terms</strong><span>This quotation is a demo estimate and is valid for {form.validity}. Final billing may vary based on approved work or materials.</span></div>
+          </div>
+        </div>
+      )}
+
+      {!showForm && (
+        <div className="table-card">
+          <div className="table-head"><span>QUOTE</span><span>CUSTOMER</span><span>ITEM</span><span>AMOUNT</span><span>STATUS</span></div>
+          {safeQuotations.length === 0 ? <EmptyState icon={FileText} title="No quotations yet" text="Create your first quotation." /> : safeQuotations.map(q => (
+            <button type="button" className="table-row quotation-row-button" key={q.id} onClick={()=>setSelectedQuote(q)}>
+              <strong>{q.id}</strong><span>{q.customer}</span><span>{q.item}</span><strong>{money(q.amount)}</strong><Status status={q.status}/>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedQuote && (
+        <div className="modal-backdrop">
+          <div className="card quotation-document quotation-modal-document">
+            <button className="job-drawer-close" style={{position:"absolute",right:18,top:18}} onClick={()=>setSelectedQuote(null)}><X size={20}/></button>
+            <div className="invoice-document-head"><div><span className="eyebrow">AL KANZ UPHOLSTERY</span><h2>QUOTATION</h2><p>Dubai, UAE · AED</p></div><div className="document-number"><strong>{selectedQuote.id}</strong><span>{selectedQuote.date}</span><span>Valid: {selectedQuote.validity}</span></div></div>
+            <div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{selectedQuote.customer}</strong><span>{selectedQuote.phone || "—"}</span></div></div>
+            <div className="invoice-items"><div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div><div className="invoice-item-row"><span><strong>{selectedQuote.item}</strong><small>{selectedQuote.description || "—"}</small></span><span>{selectedQuote.quantity}</span><span>{money(selectedQuote.unitPrice)}</span><strong>{money(selectedQuote.subtotal)}</strong></div></div>
+            <div className="document-totals"><div><span>Subtotal</span><strong>{money(selectedQuote.subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(selectedQuote.vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(selectedQuote.amount)}</strong></div></div>
+            <div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print Quotation</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 /* ============================================================
@@ -7153,6 +7087,52 @@ const AL_KANZ_TRUE_FINAL_FIX = `
 }
 `;
 
-const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX;
+
+
+const AL_KANZ_FULL_MOTION_CSS = `
+/* ============================================================
+   AL KANZ — FULL MOTION SYSTEM
+   ============================================================ */
+.app{--motion-ease:cubic-bezier(.22,.8,.22,1);position:relative;isolation:isolate}
+.app::before{content:"";position:fixed;inset:-20%;z-index:-2;pointer-events:none;background:radial-gradient(circle at 18% 18%,rgba(89,196,161,.075),transparent 24%),radial-gradient(circle at 82% 30%,rgba(183,222,116,.055),transparent 22%),radial-gradient(circle at 55% 88%,rgba(69,157,132,.045),transparent 25%);animation:ambientDrift 18s ease-in-out infinite alternate}
+@keyframes ambientDrift{0%{transform:translate3d(-1.5%,-1%,0) scale(1)}50%{transform:translate3d(1.5%,1%,0) scale(1.025)}100%{transform:translate3d(-.5%,1.5%,0) scale(1.01)}}
+.topbar{position:relative;z-index:30;transition:background .45s var(--motion-ease),box-shadow .45s var(--motion-ease),border-color .45s var(--motion-ease)}
+.topbar::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;transform:scaleX(0);transform-origin:left;background:linear-gradient(90deg,transparent,var(--green),transparent);animation:topbarSweep 1.1s var(--motion-ease) .1s both}
+@keyframes topbarSweep{to{transform:scaleX(1)}}
+.page-motion{animation:pageEnter .52s var(--motion-ease) both;transform-origin:50% 8%;position:relative}
+@keyframes pageEnter{0%{opacity:0;transform:translateY(12px) scale(.992);filter:blur(3px)}55%{opacity:1;filter:blur(0)}100%{opacity:1;transform:translateY(0) scale(1)}}
+.page-motion>*{animation:sectionRise .6s var(--motion-ease) both}.page-motion>*:nth-child(1){animation-delay:.04s}.page-motion>*:nth-child(2){animation-delay:.09s}.page-motion>*:nth-child(3){animation-delay:.14s}.page-motion>*:nth-child(4){animation-delay:.19s}.page-motion>*:nth-child(5){animation-delay:.24s}
+@keyframes sectionRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.sidebar{transition:width .38s var(--motion-ease),transform .38s var(--motion-ease),box-shadow .38s var(--motion-ease);will-change:width,transform}
+.nav-group{animation:navGroupIn .65s var(--motion-ease) both}.nav-group:nth-child(1){animation-delay:.05s}.nav-group:nth-child(2){animation-delay:.1s}.nav-group:nth-child(3){animation-delay:.15s}.nav-group:nth-child(4){animation-delay:.2s}
+@keyframes navGroupIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+.nav-item{position:relative;overflow:hidden;transition:transform .22s var(--motion-ease),background .22s ease,color .22s ease,padding .45s var(--motion-ease)}
+.nav-item::before{content:"";position:absolute;top:0;bottom:0;left:0;width:3px;border-radius:0 5px 5px 0;background:var(--green);transform:scaleY(0);transform-origin:center;transition:transform .25s var(--motion-ease)}
+.nav-item:hover{transform:translateX(3px)}.nav-item:hover::before,.nav-item.selected::before{transform:scaleY(1)}.nav-item svg{transition:transform .3s var(--motion-ease)}.nav-item:hover svg{transform:scale(1.08) rotate(-3deg)}
+.sub-menu{animation:subMenuOpen .3s var(--motion-ease) both;transform-origin:top}@keyframes subMenuOpen{from{opacity:0;transform:scaleY(.82) translateY(-4px)}to{opacity:1;transform:scaleY(1) translateY(0)}}.sub-menu button{transition:transform .2s ease,color .2s ease,background .2s ease}.sub-menu button:hover{transform:translateX(4px)}
+.primary-button,.secondary-button,.hero-actions button,.create-bill-button,.job-payment-button,.jobs-new-button,.filter-button,.text-button,.modal-footer button,.settings-form-actions button{position:relative;overflow:hidden;transition:transform .2s var(--motion-ease),box-shadow .25s var(--motion-ease),filter .2s ease}
+.primary-button::after,.create-bill-button::after,.hero-actions button::after,.jobs-new-button::after{content:"";position:absolute;top:-60%;left:-80%;width:45%;height:220%;transform:rotate(18deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transition:left .65s var(--motion-ease);pointer-events:none}.primary-button:hover,.create-bill-button:hover,.jobs-new-button:hover{transform:translateY(-2px);box-shadow:0 12px 25px rgba(14,92,76,.18)}.primary-button:hover::after,.create-bill-button:hover::after,.hero-actions button:hover::after,.jobs-new-button:hover::after{left:145%}.primary-button:active,.secondary-button:active,.hero-actions button:active,.create-bill-button:active,.jobs-new-button:active,.filter-button:active,.modal-footer button:active{transform:translateY(1px) scale(.985)}
+.card,.stat-card,.chart-card,.report-card,.report-box,.reports-chart-card,.customer-card,.material-card,.staff-card,.jobs-modern-card,.table-card,.settings-card,.appearance-card,.account-big-card,.daily-expense-card,.quotation-form-card,.billing-transactions-card{transition:transform .35s var(--motion-ease),box-shadow .35s var(--motion-ease),border-color .35s ease}
+.card:hover,.stat-card:hover,.chart-card:hover,.report-card:hover,.reports-chart-card:hover,.customer-card:hover,.material-card:hover,.staff-card:hover,.jobs-modern-card:hover,.table-card:hover,.settings-card:hover,.appearance-card:hover,.account-big-card:hover,.daily-expense-card:hover,.quotation-form-card:hover,.billing-transactions-card:hover{transform:translateY(-3px);box-shadow:0 16px 36px rgba(15,55,47,.10)}
+.theme-dark .card:hover,.theme-dark .stat-card:hover,.theme-dark .chart-card:hover,.theme-dark .report-card:hover,.theme-dark .reports-chart-card:hover,.theme-dark .customer-card:hover,.theme-dark .material-card:hover,.theme-dark .staff-card:hover,.theme-dark .jobs-modern-card:hover,.theme-dark .table-card:hover,.theme-dark .settings-card:hover,.theme-dark .appearance-card:hover,.theme-dark .account-big-card:hover,.theme-dark .daily-expense-card:hover,.theme-dark .quotation-form-card:hover,.theme-dark .billing-transactions-card:hover{box-shadow:0 18px 42px rgba(0,0,0,.32)}
+.stat-card strong,.billing-stats strong,.report-box strong{animation:numberReveal .65s var(--motion-ease) both}@keyframes numberReveal{from{opacity:0;transform:translateY(7px);filter:blur(2px)}to{opacity:1;transform:none;filter:none}}
+.hero{position:relative;overflow:hidden}.hero::after{content:"";position:absolute;width:220px;height:220px;right:-80px;top:-100px;border:1px solid rgba(185,223,121,.20);border-radius:50%;animation:heroOrbit 8s linear infinite;pointer-events:none}@keyframes heroOrbit{to{transform:rotate(360deg) translateX(5px) rotate(-360deg)}}.hero-ring{animation:ringBreath 4s ease-in-out infinite}.ring-two{animation-delay:1s}@keyframes ringBreath{0%,100%{transform:scale(.98);opacity:.5}50%{transform:scale(1.03);opacity:.9}}.hero-sofa{animation:sofaFloat 3.8s ease-in-out infinite}@keyframes sofaFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.global-search,.jobs-search-modern,.jobs-status-filter,input,select,textarea{transition:border-color .25s ease,box-shadow .25s ease,transform .2s ease,background .25s ease}.global-search:focus-within,.jobs-search-modern:focus-within{transform:translateY(-1px);box-shadow:0 0 0 3px rgba(72,166,139,.10)}input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(72,166,139,.10)}
+.table-row,.transaction-row,.invoice-row{transition:background .22s ease,transform .22s var(--motion-ease),box-shadow .22s ease}.table-row:hover,.transaction-row:hover,.invoice-row:hover{transform:translateX(3px)}
+.admin-dropdown,.notification-popover{animation:popoverIn .28s var(--motion-ease) both;transform-origin:top right}@keyframes popoverIn{from{opacity:0;transform:translateY(-7px) scale(.96)}to{opacity:1;transform:none}}.admin-profile div{transition:transform .3s var(--motion-ease),box-shadow .3s ease}.admin-profile:hover div{transform:rotate(-5deg) scale(1.06);box-shadow:0 5px 16px rgba(77,163,135,.18)}.notification.active svg{animation:bellMotion .65s ease both}@keyframes bellMotion{0%{transform:rotate(0)}20%{transform:rotate(13deg)}40%{transform:rotate(-12deg)}60%{transform:rotate(8deg)}80%{transform:rotate(-5deg)}100%{transform:rotate(0)}}.notification i{animation:notificationPulse 2s ease-in-out infinite}@keyframes notificationPulse{0%,100%{transform:scale(.85);opacity:.65}50%{transform:scale(1.25);opacity:1}}
+.modal-backdrop,.modal-overlay{animation:backdropIn .25s ease both}.modal{animation:modalRise .4s var(--motion-ease) both}@keyframes backdropIn{from{opacity:0}to{opacity:1}}@keyframes modalRise{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:none}}.modal-close{transition:transform .25s ease,background .2s ease}.modal-close:hover{transform:rotate(90deg)}
+.field{animation:fieldIn .45s var(--motion-ease) both}.field:nth-child(2){animation-delay:.03s}.field:nth-child(3){animation-delay:.06s}.field:nth-child(4){animation-delay:.09s}.field:nth-child(5){animation-delay:.12s}.field:nth-child(6){animation-delay:.15s}@keyframes fieldIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.billing-machine{position:relative;overflow:hidden}.billing-machine::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,transparent 0%,rgba(255,255,255,.035) 42%,transparent 58%);transform:translateX(-120%);animation:machineSweep 6s ease-in-out infinite}@keyframes machineSweep{0%,72%{transform:translateX(-120%)}88%,100%{transform:translateX(120%)}}.billing-machine-screen{transition:transform .4s var(--motion-ease),box-shadow .4s ease}.billing-machine:hover .billing-machine-screen{transform:translateY(-2px);box-shadow:0 14px 32px rgba(0,0,0,.12)}
+.billing-transfer-animation-v2,.billing-flow{position:relative}.billing-transfer-animation-v2::before,.billing-flow::before{content:"";position:absolute;left:8%;right:8%;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(185,223,121,.30),transparent);pointer-events:none}.billing-transfer-animation-v2 .wave-track span{animation:signalWave 1.8s ease-in-out infinite}.billing-transfer-animation-v2 .wave-track span:nth-child(2){animation-delay:.12s}.billing-transfer-animation-v2 .wave-track span:nth-child(3){animation-delay:.24s}.billing-transfer-animation-v2 .wave-track span:nth-child(4){animation-delay:.36s}.billing-transfer-animation-v2 .wave-track span:nth-child(5){animation-delay:.48s}@keyframes signalWave{0%,100%{transform:translateY(5px) scale(.82);opacity:.28}50%{transform:translateY(-5px) scale(1.15);opacity:1}}
+.quotation-form-card .quotation-preview,.quotation-form-card .invoice-preview,.invoice-paper,.quotation-paper{transition:transform .4s var(--motion-ease),box-shadow .4s ease}.quotation-form-card:hover .quotation-preview,.quotation-form-card:hover .invoice-preview{transform:translateY(-3px);box-shadow:0 18px 38px rgba(20,65,55,.12)}
+.report-chart path,.chart-card path{animation:chartDraw 1.3s var(--motion-ease) both}@keyframes chartDraw{from{stroke-dasharray:900;stroke-dashoffset:900;opacity:.2}to{stroke-dashoffset:0;opacity:1}}
+.loading,.skeleton{animation:skeletonPulse 1.4s ease-in-out infinite}@keyframes skeletonPulse{0%,100%{opacity:.55}50%{opacity:1}}
+.sidebar-overlay{animation:overlayIn .25s ease both}@keyframes overlayIn{from{opacity:0}to{opacity:1}}
+@media(max-width:850px){.sidebar.sidebar-open{animation:mobileSidebarIn .42s var(--motion-ease) both}@keyframes mobileSidebarIn{from{transform:translateX(-102%)}to{transform:translateX(0)}}.page-motion{animation-duration:.42s}.card:hover,.stat-card:hover,.chart-card:hover,.report-card:hover,.reports-chart-card:hover,.customer-card:hover,.material-card:hover,.staff-card:hover,.jobs-modern-card:hover,.table-card:hover,.settings-card:hover,.appearance-card:hover,.account-big-card:hover,.daily-expense-card:hover,.quotation-form-card:hover,.billing-transactions-card:hover{transform:translateY(-2px)}}
+.app.theme-dark::before{background:radial-gradient(circle at 18% 18%,rgba(89,196,161,.08),transparent 24%),radial-gradient(circle at 82% 30%,rgba(183,222,116,.055),transparent 22%),radial-gradient(circle at 55% 88%,rgba(69,157,132,.055),transparent 25%)}.app.theme-dark .topbar::after{background:linear-gradient(90deg,transparent,#73d4b2,transparent)}
+@media(prefers-reduced-motion:reduce){.app::before,.topbar::after,.page-motion,.page-motion>*,.nav-group,.sub-menu,.hero::after,.hero-ring,.hero-sofa,.stat-card strong,.billing-machine::before,.billing-transfer-animation-v2 .wave-track span,.admin-dropdown,.notification-popover,.modal-backdrop,.modal-overlay,.modal,.field,.notification i,.notification.active svg,.report-chart path,.chart-card path,.loading,.skeleton,.sidebar-overlay,.sidebar.sidebar-open{animation:none!important}.card,.stat-card,.chart-card,.report-card,.reports-chart-card,.customer-card,.material-card,.staff-card,.jobs-modern-card,.table-card,.settings-card,.appearance-card,.account-big-card,.daily-expense-card,.quotation-form-card,.billing-transactions-card,.nav-item,.primary-button,.secondary-button,.hero-actions button,.create-bill-button,.job-payment-button,.jobs-new-button,.filter-button,.text-button{transition:none!important}}
+`;
+
+const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX + AL_KANZ_FULL_MOTION_CSS;
 
 export default App;
