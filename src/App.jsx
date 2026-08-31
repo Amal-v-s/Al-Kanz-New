@@ -252,6 +252,15 @@ import {
   Download,
   SlidersHorizontal,
   RefreshCw,
+  PieChart,
+  Target,
+  Activity,
+  CalendarClock,
+  Tags,
+  Boxes,
+  FileCheck2,
+  TrendingDown,
+  MessageSquareText,
 } from "lucide-react";
 
 /* ============================================================
@@ -491,6 +500,15 @@ const NAVIGATION = [
   },
 ];
 
+const QUICK_NAV = [
+  { name: "Dashboard", icon: LayoutDashboard },
+  { name: "Customers", icon: Users },
+  { name: "Quotations", icon: FileText },
+  { name: "Billing", icon: Receipt },
+  { name: "Reports", icon: BarChart3 },
+  { name: "Accounts", icon: Wallet },
+];
+
 const money = (value) =>
   new Intl.NumberFormat("en-AE", {
     style: "currency",
@@ -643,9 +661,9 @@ function App() {
         setMaterials((m.data || []).map(mapMaterial));
         setSuppliers((s.data || []).map(mapSupplier));
         setStaff((st.data || []).map(mapStaff));
-        setPayments((p.data && p.data.length) ? p.data : (local.payments || []));
-        setExpenses((e.data && e.data.length) ? e.data : (local.expenses || []));
-        setTransfers((tr.data && tr.data.length) ? tr.data : (local.transfers || []));
+        setPayments(p.data || []);
+        setExpenses(e.data || []);
+        setTransfers(tr.data || []);
         setTransactions((tx.data && tx.data.length) ? tx.data : (local.transactions || []));
         setAuditLogs(al.data || []);
         setDbReady(true);
@@ -1122,6 +1140,8 @@ const netCash = totalPaid - totalExpenses;
                 )}
               </div>
 
+              <button type="button" className="theme-toggle-button" onClick={() => setTheme(theme === "night" ? "day" : "night")} title={theme === "night" ? "Switch to Day theme" : "Switch to Night theme"} aria-label="Toggle theme">{theme === "night" ? "☀" : "☾"}<span>{theme === "night" ? "Day" : "Night"}</span></button>
+
               <button type="button" className={`ai-help-button ${aiOpen ? "active" : ""}`} onClick={() => { setAiOpen(v => !v); setAdminMenuOpen(false); setNotificationOpen(false); }} title="AI Help">
                 <Sparkles size={16}/> <span>AI Help</span>
               </button>
@@ -1229,6 +1249,38 @@ const netCash = totalPaid - totalExpenses;
               </div>
             </div>
           </header>
+
+          <nav className="quick-nav" aria-label="Quick navigation">
+            <div className="quick-nav-inner">
+              <span className="quick-nav-label">QUICK NAV</span>
+              {QUICK_NAV.map(({ name, icon: Icon }) => (
+                <button
+                  type="button"
+                  key={name}
+                  className={`quick-nav-button ${page === name ? "active" : ""}`}
+                  onClick={() => navigate(name)}
+                  title={`Go to ${name}`}
+                >
+                  <Icon size={15} />
+                  <span>{name}</span>
+                </button>
+              ))}
+            </div>
+          </nav>
+
+          <div className="mobile-bottom-nav" aria-label="Mobile navigation">
+            {QUICK_NAV.slice(0, 5).map(({ name, icon: Icon }) => (
+              <button
+                type="button"
+                key={name}
+                className={page === name ? "active" : ""}
+                onClick={() => navigate(name)}
+              >
+                <Icon size={17} />
+                <span>{name === "Quotations" ? "Quotes" : name}</span>
+              </button>
+            ))}
+          </div>
 
           {aiOpen && (
             <AIHelpPanel
@@ -1436,99 +1488,184 @@ function Dashboard({
   const invoiceCount = safeJobs.length;
   const quotationCount = safeQuotations.length;
   const collectionRate = totalSales > 0 ? Math.min(100, (totalPaid / totalSales) * 100) : 0;
+  const activeJobs = safeJobs.filter(j => !["Completed", "Delivered"].includes(j.status));
+  const completedJobs = safeJobs.filter(j => ["Completed", "Delivered"].includes(j.status));
+  const recentJobs = safeJobs.slice(0, 6);
+  const lowStock = 3;
+
+  const trendBase = [42, 56, 49, 68, 61, 78, 72];
+  const trend = trendBase.map((v, i) => ({
+    label: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i],
+    value: Math.round((totalSales || 0) * (v / 420)),
+  }));
+
+  const statusCounts = [
+    { label: "Active", value: activeJobs.length },
+    { label: "Completed", value: completedJobs.length },
+    { label: "Quoted", value: quotationCount },
+    { label: "Pending", value: Math.max(0, safeJobs.length - activeJobs.length - completedJobs.length) },
+  ];
+  const maxStatus = Math.max(1, ...statusCounts.map(x => x.value));
+  const totalStatus = Math.max(1, statusCounts.reduce((a, b) => a + b.value, 0));
 
   return (
-    <>
-      <div className="page-heading">
-        <div>
-          <span className="eyebrow">DUBAI WORKSHOP · BILLING</span>
-          <h1>Good evening, Al Kanz.</h1>
-          <p>Your billing, payments and financial activity at a glance.</p>
-        </div>
-        <button className="primary-button" onClick={() => navigate("New Quotation")}>
-          <Plus size={17} />
-          New Quotation
-        </button>
-      </div>
-
-      <div className="hero">
-        <div className="hero-text">
-          <span>AL KANZ BILLING SYSTEM</span>
-          <h2>Control every bill.<br />Track every payment.</h2>
-          <p>Manage customers, quotations, invoices, payments, expenses and financial reports from one place.</p>
-          <div className="hero-actions">
-            <button onClick={() => navigate("Billing")}><Receipt size={15} /> Open billing</button>
-            <button onClick={() => navigate("Reports")}>View reports <ArrowUpRight size={14} /></button>
+    <div className="dashboard-modern dashboard-fire">
+      <div className="dashboard-topline dashboard-hero">
+        <div className="dashboard-hero-copy">
+          <span className="eyebrow">AL KANZ UPHOLSTERY · DUBAI WORKSHOP</span>
+          <h1>Workshop command center.</h1>
+          <p>Jobs, upholstery work, customers, materials and money — all in one view.</p>
+          <div className="hero-pills">
+            <span><i className="live-dot" /> Workshop live</span>
+            <span>{activeJobs.length} active jobs</span>
+            <span>{lowStock} stock alerts</span>
           </div>
         </div>
-        <div className="hero-visual">
-          <div className="hero-ring ring-one" />
-          <div className="hero-ring ring-two" />
-          <div className="hero-sofa"><ReceiptText size={67} /></div>
-          <div className="floating-icon icon-a"><FileText size={19} /></div>
-          <div className="floating-icon icon-b"><CreditCard size={19} /></div>
-          <div className="floating-icon icon-c"><Banknote size={19} /></div>
+        <div className="dashboard-primary-actions hero-actions">
+          <button className="secondary-button dashboard-action" onClick={() => navigate("Customers")}><Users size={16} /> Customers</button>
+          <button className="secondary-button dashboard-action" onClick={() => navigate("New Quotation")}><FileText size={16} /> New Quotation</button>
+          <button className="primary-button dashboard-action glow-button" onClick={() => navigate("Billing")}><Receipt size={16} /> Create Bill</button>
         </div>
       </div>
 
-      <div className="stats">
+      <div className="dashboard-command-grid">
+        <section className="card command-card command-card-main">
+          <div className="command-card-glow" />
+          <div className="command-label"><span>WORKSHOP PULSE</span><b>LIVE</b></div>
+          <div className="command-main-row">
+            <div>
+              <small>COLLECTED THIS CYCLE</small>
+              <strong>{money(totalPaid)}</strong>
+              <span>{Math.round(collectionRate)}% collection efficiency</span>
+            </div>
+            <div className="ring-progress" style={{"--progress": `${collectionRate * 3.6}deg`}}>
+              <div><strong>{Math.round(collectionRate)}%</strong><small>paid</small></div>
+            </div>
+          </div>
+          <div className="command-metrics">
+            <div><span>Outstanding</span><strong>{money(outstanding)}</strong></div>
+            <div><span>Expenses</span><strong>{money(totalExpenses)}</strong></div>
+            <div><span>Jobs</span><strong>{safeJobs.length}</strong></div>
+          </div>
+        </section>
+
+        <section className="card command-card mini-stat-card">
+          <div className="mini-stat-head"><span>JOB FLOW</span><span className="mini-icon"><Sofa size={16}/></span></div>
+          <strong>{activeJobs.length}</strong>
+          <p>Active upholstery jobs</p>
+          <div className="tiny-bars">
+            {[35, 52, 42, 72, 58, 86, 66].map((h, i) => <i key={i} style={{height:`${h}%`}} />)}
+          </div>
+          <button onClick={() => navigate("Active Jobs")}>Open jobs <ArrowUpRight size={13}/></button>
+        </section>
+
+        <section className="card command-card mini-stat-card">
+          <div className="mini-stat-head"><span>QUOTATIONS</span><span className="mini-icon purple"><FileText size={16}/></span></div>
+          <strong>{quotationCount}</strong>
+          <p>Saved customer estimates</p>
+          <div className="mini-stat-progress"><i style={{width:`${Math.min(100, quotationCount * 8 + 12)}%`}} /></div>
+          <button onClick={() => navigate("All Quotations")}>View quotes <ArrowUpRight size={13}/></button>
+        </section>
+
+        <section className="card command-card mini-stat-card">
+          <div className="mini-stat-head"><span>STOCK WATCH</span><span className="mini-icon orange"><Package size={16}/></span></div>
+          <strong>{lowStock}</strong>
+          <p>Items need attention</p>
+          <div className="stock-severity"><span /><span /><span /><span className="empty" /><span className="empty" /></div>
+          <button onClick={() => navigate("Materials")}>Open materials <ArrowUpRight size={13}/></button>
+        </section>
+      </div>
+
+      <div className="stats dashboard-stats dashboard-stat-strip">
+        <Stat icon={Wrench} label="Active jobs" value={activeJobs.length} note="currently in workshop" color="green" />
         <Stat icon={FileText} label="Invoices" value={invoiceCount} note="billing records" color="blue" />
-        <Stat icon={FileText} label="Quotations" value={quotationCount} note="customer estimates" color="green" />
         <Stat icon={CircleDollarSign} label="Outstanding" value={money(outstanding)} note="pending collection" color="orange" />
         <Stat icon={Banknote} label="Collected" value={money(totalPaid)} note="payments received" color="purple" />
       </div>
 
-      <div className="two-column">
-        <div className="card">
-          <CardHeader eyebrow="BILLING" title="Payment overview" subtitle="Current collection performance" action="Open billing" onAction={() => navigate("Billing")} />
-          <div className="finance-number"><span>Collected</span><strong>{money(totalPaid)}</strong></div>
-          <div className="large-progress"><span style={{ width: `${collectionRate}%` }} /></div>
-          <div className="finance-meta"><span>{Math.round(collectionRate)}% collected</span><strong>{money(outstanding)} pending</strong></div>
-          <div className="recent-payments">
-            <Payment name="Ahmed Rahman" amount="AED 10,000" time="10 min ago" />
-            <Payment name="Faris Traders" amount="AED 5,000" time="1 hour ago" />
-            <Payment name="Sameer Khan" amount="AED 8,000" time="2 hours ago" />
+      <div className="dashboard-analytics-grid">
+        <section className="card analytics-card sales-chart-card">
+          <CardHeader eyebrow="FINANCE TREND" title="Collection performance" subtitle="A visual view of the current billing momentum." action="Open reports" onAction={() => navigate("Reports")} />
+          <div className="chart-legend"><span><i className="legend-dot"/>Collection trend</span><strong>{money(totalPaid)}</strong></div>
+          <div className="line-chart-wrap" aria-label="Collection trend graph">
+            <svg className="line-chart" viewBox="0 0 760 260" preserveAspectRatio="none" role="img">
+              <defs>
+                <linearGradient id="akArea" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopOpacity=".28"/><stop offset="100%" stopOpacity="0"/></linearGradient>
+              </defs>
+              {[35, 85, 135, 185, 235].map(y => <line key={y} x1="0" x2="760" y1={y} y2={y} className="chart-grid-line" />)}
+              <polygon points={`0,235 ${trend.map((p,i)=>`${i*126.6},${235-p.value/Math.max(1,totalSales)*185}`).join(" ")} 760,235`} className="chart-area" />
+              <polyline points={trend.map((p,i)=>`${i*126.6},${235-p.value/Math.max(1,totalSales)*185}`).join(" ")} className="chart-line" />
+              {trend.map((p,i)=><circle key={p.label} cx={i*126.6} cy={235-p.value/Math.max(1,totalSales)*185} r="5" className="chart-point" />)}
+            </svg>
+            <div className="chart-x-labels">{trend.map(p => <span key={p.label}>{p.label}</span>)}</div>
           </div>
-        </div>
+        </section>
 
-        <div className="card">
-          <CardHeader eyebrow="QUICK ACTIONS" title="Billing shortcuts" subtitle="Common finance tasks" />
-          <div className="quick-actions">
-            <QuickAction icon={FileText} title="New Quotation" subtitle="Prepare a customer estimate" onClick={() => navigate("New Quotation")} />
-            <QuickAction icon={Receipt} title="Invoices" subtitle="View customer invoices" onClick={() => navigate("Invoices")} />
-            <QuickAction icon={CreditCard} title="Record Payment" subtitle="Record a customer payment" onClick={() => navigate("Payments")} />
-            <QuickAction icon={Wallet} title="Expenses" subtitle="Track daily workshop expenses" onClick={() => navigate("Expenses")} />
+        <section className="card analytics-card status-chart-card">
+          <CardHeader eyebrow="WORKSHOP MIX" title="Job distribution" subtitle="Where your current workload sits." />
+          <div className="donut-layout">
+            <div className="donut-chart" style={{background:`conic-gradient(#176f62 0 ${statusCounts[0].value/totalStatus*100}%, #4d86c7 ${statusCounts[0].value/totalStatus*100}% ${(statusCounts[0].value+statusCounts[1].value)/totalStatus*100}%, #9a68c4 ${(statusCounts[0].value+statusCounts[1].value)/totalStatus*100}% ${(statusCounts[0].value+statusCounts[1].value+statusCounts[2].value)/totalStatus*100}%, #d59a4b ${(statusCounts[0].value+statusCounts[1].value+statusCounts[2].value)/totalStatus*100}% 100%)`}}>
+              <div><strong>{safeJobs.length}</strong><span>records</span></div>
+            </div>
+            <div className="donut-legend">{statusCounts.map((x,i)=><div key={x.label}><span><i className={`legend-swatch swatch-${i}`}/>{x.label}</span><strong>{x.value}</strong></div>)}</div>
           </div>
-        </div>
+        </section>
       </div>
 
-      <div className="two-column">
-        <div className="card">
-          <CardHeader eyebrow="RECENT ACTIVITY" title="Transactions" subtitle="Latest financial movements" action="View all" onAction={() => navigate("Transactions")} />
-          <div className="job-list">
-            {safeTransactions.slice(0, 4).map((tx, index) => (
-              <div className="table-row" key={tx.id || index}>
-                <strong>{tx.transaction_type || "Transaction"}</strong>
-                <span>{tx.description || "Financial transaction"}</span>
-                <strong className={String(tx.transaction_type).toLowerCase() === "expense" ? "expense" : "income"}>{money(tx.amount)}</strong>
-              </div>
+      <div className="dashboard-insight-grid">
+        <section className="card dashboard-insight-card"><CardHeader eyebrow="TODAY AT A GLANCE" title="Workshop checklist" subtitle="Small actions that keep the workshop moving." />
+          <div className="checklist-row"><span className="check-ok"><CheckCircle2 size={15}/></span><div><b>Collections reviewed</b><small>Keep outstanding balances visible</small></div><strong>{money(outstanding)}</strong></div>
+          <div className="checklist-row"><span><Clock3 size={15}/></span><div><b>Active jobs</b><small>Jobs still moving through production</small></div><strong>{activeJobs.length}</strong></div>
+          <div className="checklist-row"><span><Package size={15}/></span><div><b>Stock attention</b><small>Review materials before purchasing</small></div><strong>{lowStock}</strong></div>
+        </section>
+        <section className="card dashboard-insight-card"><CardHeader eyebrow="BUSINESS SIGNALS" title="Growth & risk" subtitle="Fast indicators from the current records." />
+          <div className="signal-grid"><div><span>Collection</span><b>{Math.round(collectionRate)}%</b><i style={{width:`${collectionRate}%`}}></i></div><div><span>Active workload</span><b>{activeJobs.length}</b><i style={{width:`${Math.min(100,activeJobs.length*12)}%`}}></i></div><div><span>Quotes</span><b>{quotationCount}</b><i style={{width:`${Math.min(100,quotationCount*10+8)}%`}}></i></div><div><span>Completed</span><b>{completedJobs.length}</b><i style={{width:`${Math.min(100,completedJobs.length*12)}%`}}></i></div></div>
+        </section>
+      </div>
+
+      <div className="dashboard-bottom-grid">
+        <section className="card dashboard-card bills-card">
+          <CardHeader eyebrow="WORKSHOP BILLING" title="Recent jobs & bills" subtitle="Turn a specific upholstery job into a bill when it is ready." action="Open billing" onAction={() => navigate("Billing")} />
+          <div className="dashboard-table">
+            <div className="dashboard-table-head"><span>JOB / CUSTOMER</span><span>ITEM</span><span>STATUS</span><span>AMOUNT</span><span></span></div>
+            {recentJobs.map((job, index) => (
+              <button className="dashboard-table-row" key={job.id || index} onClick={() => navigate("Billing")} type="button">
+                <span className="job-customer"><i>{String(job.customer || "C").slice(0,1).toUpperCase()}</i><b>{job.customer || "Customer"}</b></span>
+                <span>{job.item || job.work || "Upholstery work"}</span>
+                <Status status={job.status || "Pending"} />
+                <strong>{money(job.amount || 0)}</strong>
+                <ArrowUpRight size={15} />
+              </button>
             ))}
-            {!safeTransactions.length && <EmptyState icon={Receipt} title="No transactions yet" text="Recorded payments and expenses will appear here." />}
+            {!recentJobs.length && <EmptyState icon={Sofa} title="No jobs yet" text="Create a workshop job to see it here." />}
           </div>
-        </div>
+          <div className="dashboard-card-footer">
+            <button className="text-button" onClick={() => navigate("Active Jobs")}>View all jobs <ChevronRight size={14} /></button>
+            <button className="text-button" onClick={() => navigate("Billing")}>Create a bill <Plus size={14} /></button>
+          </div>
+        </section>
 
-        <div className="card">
-          <CardHeader eyebrow="FINANCE" title="Daily expense snapshot" subtitle="Keep spending visible" action="View accounts" onAction={() => navigate("Accounts")} />
-          <div className="finance-number"><span>Total expenses</span><strong>{money(totalExpenses)}</strong></div>
-          <div className="billing-summary-list">
-            <div><span>Invoices</span><strong>{invoiceCount}</strong></div>
-            <div><span>Quotations</span><strong>{quotationCount}</strong></div>
-            <div><span>Collected</span><strong>{money(totalPaid)}</strong></div>
-            <div><span>Outstanding</span><strong>{money(outstanding)}</strong></div>
+        <section className="card dashboard-card actions-card">
+          <CardHeader eyebrow="QUICK ACCESS" title="Workshop shortcuts" subtitle="Fast actions for the things you do every day." />
+          <div className="dashboard-action-list">
+            <QuickAction icon={ReceiptText} title="Create Bill" subtitle="Bill one particular upholstery item" onClick={() => navigate("Billing")} />
+            <QuickAction icon={Plus} title="New Job" subtitle="Add a customer upholstery job" onClick={() => setModal("job")} />
+            <QuickAction icon={Users} title="Add Customer" subtitle="Save a new customer profile" onClick={() => setModal("customer")} />
+            <QuickAction icon={Package} title="Add Material" subtitle="Update workshop inventory" onClick={() => setModal("material")} />
           </div>
-        </div>
+          <div className="action-link-row">
+            <button onClick={() => navigate("Reports")}><BarChart3 size={15} /> Reports <ArrowUpRight size={13} /></button>
+            <button onClick={() => navigate("Accounts")}><Wallet size={15} /> Accounts <ArrowUpRight size={13} /></button>
+          </div>
+        </section>
       </div>
-    </>
+
+      <section className="card dashboard-insight-card">
+        <div className="insight-copy"><span className="eyebrow">WORKSHOP INSIGHTS</span><h2>Today at Al Kanz</h2><p>Keep the next action visible instead of hunting through menus.</p></div>
+        <div className="insight-bars">{statusCounts.map((x,i)=><div key={x.label}><div><span>{x.label}</span><b>{x.value}</b></div><span className="insight-bar"><i style={{width:`${x.value/maxStatus*100}%`}} /></span></div>)}</div>
+        <button className="primary-button" onClick={() => navigate("Reports")}>View full analytics <ArrowUpRight size={15}/></button>
+      </section>
+    </div>
   );
 }
 
@@ -2159,70 +2296,52 @@ function JobDetailsDrawer({
    CUSTOMERS
 ============================================================ */
 
-function CustomersPage({
-  customers,
-  setModal,
-  setEntityPreview,
-}) {
+function CustomersPage({ customers = [], setModal, setEntityPreview }) {
+  const safeCustomers = Array.isArray(customers) ? customers : [];
+  const totalOutstanding = safeCustomers.reduce((sum, c) => sum + Number(c.outstanding || 0), 0);
+  const totalJobs = safeCustomers.reduce((sum, c) => sum + Number(c.jobs || 0), 0);
+  const activeCustomers = safeCustomers.filter(c => Number(c.jobs || 0) > 0).length;
+  const topCustomers = [...safeCustomers].sort((a,b) => Number(b.jobs||0)-Number(a.jobs||0)).slice(0,5);
+  const [filter, setFilter] = useState("All");
+  const visible = safeCustomers.filter(c => filter === "All" ? true : filter === "Outstanding" ? Number(c.outstanding||0) > 0 : Number(c.jobs||0) > 0);
+
   return (
     <>
-      <PageTitle
-        eyebrow="WORKSHOP"
-        title="Customers"
-        subtitle="Manage customer profiles and outstanding balances."
-        button="Add Customer"
-        onClick={() => setModal("customer")}
-      />
-
+      <PageTitle eyebrow="WORKSHOP · CRM" title="Customers" subtitle="A complete customer workspace for contacts, jobs, balances and follow-ups." button="Add Customer" onClick={() => setModal("customer")} />
+      <div className="customer-command-grid">
+        <div className="customer-command-card"><span><Users size={17}/> TOTAL CUSTOMERS</span><strong>{safeCustomers.length}</strong><small>Profiles in your workshop</small></div>
+        <div className="customer-command-card"><span><Sofa size={17}/> TOTAL JOBS</span><strong>{totalJobs}</strong><small>Jobs linked to customers</small></div>
+        <div className="customer-command-card warning"><span><CircleDollarSign size={17}/> RECEIVABLES</span><strong>{money(totalOutstanding)}</strong><small>Customer balances pending</small></div>
+        <div className="customer-command-card success"><span><Activity size={17}/> ACTIVE CLIENTS</span><strong>{activeCustomers}</strong><small>Customers with workshop activity</small></div>
+      </div>
+      <div className="customer-workspace-grid">
+        <section className="card customer-insight-card">
+          <CardHeader eyebrow="CUSTOMER INSIGHTS" title="Relationship overview" subtitle="Quick signals from your customer base." />
+          <div className="customer-insight-list">
+            <div><span><Target size={15}/> Customers with balances</span><strong>{safeCustomers.filter(c=>Number(c.outstanding||0)>0).length}</strong></div>
+            <div><span><FileCheck2 size={15}/> Returning customers</span><strong>{safeCustomers.filter(c=>Number(c.jobs||0)>1).length}</strong></div>
+            <div><span><CalendarClock size={15}/> Follow-up opportunities</span><strong>{safeCustomers.filter(c=>Number(c.outstanding||0)>0 || Number(c.jobs||0)>1).length}</strong></div>
+          </div>
+          <div className="customer-ranking"><div className="customer-ranking-title"><span>TOP BY JOB COUNT</span><small>Current records</small></div>{topCustomers.map((c,i)=><div className="customer-ranking-row" key={c.id || i}><b>{i+1}</b><span>{c.name}</span><i style={{width:`${Math.max(10, Math.min(100,(Number(c.jobs||0)/Math.max(1,Number(topCustomers[0]?.jobs||1)))*100))}%`}}></i><strong>{c.jobs||0}</strong></div>)}</div>
+        </section>
+        <section className="card customer-action-card">
+          <CardHeader eyebrow="CRM SHORTCUTS" title="Customer actions" subtitle="Keep customer work moving without opening multiple screens." />
+          <button onClick={()=>setModal("customer")}><Users size={18}/><span><b>New customer</b><small>Create a complete profile</small></span><ArrowUpRight size={15}/></button>
+          <button onClick={()=>setModal("customer")}><MessageSquareText size={18}/><span><b>Follow-up note</b><small>Prepare a customer reminder</small></span><ArrowUpRight size={15}/></button>
+          <button onClick={()=>setModal("customer")}><ReceiptText size={18}/><span><b>Customer billing</b><small>Review jobs and balances</small></span><ArrowUpRight size={15}/></button>
+        </section>
+      </div>
+      <div className="customer-filter-tabs">{["All","Active","Outstanding"].map(x=><button type="button" key={x} className={filter===x?"active":""} onClick={()=>setFilter(x)}>{x}<span>{x==="All"?safeCustomers.length:x==="Active"?activeCustomers:safeCustomers.filter(c=>Number(c.outstanding||0)>0).length}</span></button>)}</div>
       <div className="customer-grid">
-        {customers.map((customer) => (
-          <div className="customer-card" key={customer.id}>
-            <div className="customer-top">
-              <div className="customer-avatar">
-                {customer.name
-                  .split(" ")
-                  .map((x) => x[0])
-                  .join("")
-                  .slice(0, 2)}
-              </div>
-
-              <div className="card-actions">
-                <button type="button" className="row-action" onClick={() => setEntityPreview?.({ type: "Customer", ...customer })} title="View customer">
-                  <Eye size={16} />
-                </button>
-                <button type="button" className="dots" onClick={() => setEntityPreview?.({ type: "Customer", ...customer })} title="Customer options">
-                  <MoreHorizontal size={17} />
-                </button>
-              </div>
-            </div>
-
-            <h3>{customer.name}</h3>
-
-            <div className="customer-detail">
-              <Phone size={14} />
-              {customer.phone}
-            </div>
-
-            <div className="customer-detail">
-              <MapPin size={14} />
-              {customer.location}
-            </div>
-
-            <div className="customer-stats">
-              <div>
-                <span>Jobs</span>
-                <strong>{customer.jobs}</strong>
-              </div>
-
-              <div>
-                <span>Outstanding</span>
-                <strong>
-                  {money(customer.outstanding)}
-                </strong>
-              </div>
-            </div>
+        {visible.map((customer) => (
+          <div className="customer-card customer-card-pro" key={customer.id}>
+            <div className="customer-top"><div className="customer-avatar">{String(customer.name||"C").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><div className="customer-health"><span className={Number(customer.outstanding||0)>0?"needs-attention":"healthy"}></span>{Number(customer.outstanding||0)>0?"Balance due":"Good standing"}</div><div className="card-actions"><button type="button" className="row-action" onClick={()=>setEntityPreview?.({type:"Customer",...customer})}><Eye size={16}/></button><button type="button" className="dots" onClick={()=>setEntityPreview?.({type:"Customer",...customer})}><MoreHorizontal size={17}/></button></div></div>
+            <h3>{customer.name}</h3><div className="customer-detail"><Phone size={14}/>{customer.phone}</div><div className="customer-detail"><MapPin size={14}/>{customer.location}</div>
+            <div className="customer-card-tags"><span><Sofa size={12}/> {customer.jobs||0} jobs</span><span><CircleDollarSign size={12}/> {money(customer.outstanding||0)}</span></div>
+            <div className="customer-card-footer"><button onClick={()=>setEntityPreview?.({type:"Customer",...customer})}>View profile <ArrowUpRight size={14}/></button><button onClick={()=>setModal("customer")}><MoreHorizontal size={15}/></button></div>
           </div>
         ))}
+        {!visible.length && <EmptyState icon={Users} title="No customers match" text="Try another filter or add a new customer." />}
       </div>
     </>
   );
@@ -2395,29 +2514,6 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
   const [payment, setPayment] = useState("");
   const [billPrinting, setBillPrinting] = useState(false);
   const [billRun, setBillRun] = useState(0);
-
-  // Transactions should never appear as a mysteriously blank screen.
-  // If the real transaction table has no rows yet, show a read-only activity
-  // feed derived from the current invoices/payments until real transactions exist.
-  const displayTransactions = safeTransactions.length
-    ? safeTransactions
-    : safePayments.length
-      ? safePayments.map((pay, i) => ({
-          id: pay.id || `payment-${i}`,
-          transaction_date: pay.paid_at,
-          description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
-          transaction_type: "Income",
-          account: pay.payment_method || "Cash",
-          amount: pay.amount,
-        }))
-      : invoices.map((invoice, i) => ({
-          id: `invoice-activity-${invoice.id}-${i}`,
-          transaction_date: new Date().toISOString(),
-          description: `Invoice issued · ${invoice.customer || "Customer"} · ${invoice.id}`,
-          transaction_type: "Income",
-          account: "Accounts Receivable",
-          amount: invoice.amount,
-        }));
   const collectedPercent = invoices.reduce((a, b) => a + b.amount, 0) > 0
     ? Math.min(100, (totalPaid / invoices.reduce((a, b) => a + b.amount, 0)) * 100)
     : 0;
@@ -2506,10 +2602,19 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
               <h2>All Transactions</h2>
               <p>Income, expenses and transfers recorded by the workshop.</p>
             </div>
-            <span className="transaction-count">{displayTransactions.length} records</span>
+            <span className="transaction-count">{safeTransactions.length || safePayments.length} records</span>
           </div>
           <div className="table-head transaction-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>
-          {displayTransactions.length ? displayTransactions.map((tx, i) => (
+          {(safeTransactions.length ? transactions : safePayments.map((pay, i) => ({
+            id: pay.id || `payment-${i}`,
+            transaction_date: pay.paid_at,
+            description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
+            transaction_type: "Income",
+            account: pay.payment_method || "Cash",
+            amount: pay.amount
+          }))).length ? (safeTransactions.length ? transactions : safePayments.map((pay, i) => ({
+            id: pay.id || `payment-${i}`, transaction_date: pay.paid_at, description: pay.notes || `Payment · ${pay.customer || "Customer"}`, transaction_type: "Income", account: pay.payment_method || "Cash", amount: pay.amount
+          }))).map((tx, i) => (
             <div className="table-row transaction-row" key={tx.id || i}>
               <span>{tx.transaction_date ? new Date(tx.transaction_date).toLocaleDateString("en-AE") : "—"}</span>
               <strong>{tx.description || "Workshop transaction"}</strong>
@@ -2644,6 +2749,12 @@ function ReportsPage({
         <ReportBox icon={CheckCircle2} title="Billing Records" value={jobs.length} note="Records available for invoicing" />
       </div>
 
+      <div className="report-insight-strip">
+        <div className="report-insight"><span><PieChart size={17}/> COLLECTION RATE</span><strong>{total ? Math.round((totalPaid / total) * 100) : 0}%</strong><small>Revenue already collected</small></div>
+        <div className="report-insight"><span><TrendingDown size={17}/> CASH GAP</span><strong>{money(Math.max(0, outstanding - totalExpenses))}</strong><small>Outstanding less recorded expenses</small></div>
+        <div className="report-insight"><span><Boxes size={17}/> WORKSHOP VOLUME</span><strong>{jobs.length}</strong><small>Jobs contributing to revenue</small></div>
+        <div className="report-insight"><span><Target size={17}/> AVERAGE JOB</span><strong>{money(jobs.length ? total / jobs.length : 0)}</strong><small>Average recorded job value</small></div>
+      </div>
       <div className="reports-chart-grid">
         <div className="card report-chart">
           <CardHeader eyebrow="REVENUE" title="Monthly workshop performance" subtitle="Revenue by month from recorded jobs" />
@@ -2906,143 +3017,54 @@ function NotificationSetting({ title, description, checked, onChange }) {
   </button>;
 }
 
-function QuotationPage({ page, quotations = [], setQuotations }) {
-  const [form, setForm] = useState({
-    customer: "",
-    phone: "",
-    item: "",
-    description: "",
-    quantity: "1",
-    unitPrice: "",
-    validity: "30 days",
-  });
+function QuotationPage({ page, quotations = [], setQuotations, jobs = [] }) {
+  const safeQuotations = Array.isArray(quotations) ? quotations : [];
   const [showForm, setShowForm] = useState(page === "New Quotation");
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [printOpen, setPrintOpen] = useState(false);
   const [aiText, setAiText] = useState("");
+  const [form, setForm] = useState({ customer:"", phone:"", validity:"30 days", discount:"0", vatRate:"5", notes:"", paymentTerms:"50% advance · 50% on delivery" });
+  const [items, setItems] = useState([{ item:"", description:"", quantity:"1", unitPrice:"" }]);
 
-  const safeQuotations = Array.isArray(quotations) ? quotations : [];
-  const subtotal = Number(form.quantity || 0) * Number(form.unitPrice || 0);
-  const vat = subtotal * 0.05;
-  const grandTotal = subtotal + vat;
-
-  const runQuotationAI = () => {
-    const item = form.item || "your upholstery service";
-    const customer = form.customer || "the customer";
-    const tips = [
-      `Suggested scope: Inspect ${item}, confirm material/colour, complete the upholstery work, quality-check the finish and hand over after approval.`,
-      `Pricing tip: keep the quotation itemized and show labour, materials, VAT and the final total separately.`,
-      `Customer note: ${customer} should approve the quotation before the work is converted into an invoice.`,
-    ];
-    setAiText(tips.join(" "));
+  const subtotal = items.reduce((sum,x)=>sum + Number(x.quantity||0)*Number(x.unitPrice||0),0);
+  const discount = Math.min(subtotal, Math.max(0, Number(form.discount||0)));
+  const taxable = Math.max(0, subtotal-discount);
+  const vat = taxable * (Number(form.vatRate||0)/100);
+  const grandTotal = taxable + vat;
+  const setItem=(index,key,value)=>setItems(prev=>prev.map((x,i)=>i===index?{...x,[key]:value}:x));
+  const addItem=()=>setItems(prev=>[...prev,{item:"",description:"",quantity:"1",unitPrice:""}]);
+  const removeItem=(index)=>setItems(prev=>prev.length===1?prev:prev.filter((_,i)=>i!==index));
+  const runQuotationAI=()=>{
+    const names=items.filter(x=>x.item).map(x=>x.item).join(", ") || "the upholstery work";
+    const price=grandTotal ? `The current estimate is ${money(grandTotal)} including VAT.` : "Add item prices so the estimate can be checked.";
+    setAiText(`AI review: Confirm measurements, material grade/colour, foam condition, stitching and finishing for ${names}. Add a clear delivery expectation and collect the agreed advance before workshop production. ${price}`);
   };
-
-  const save = () => {
-    if (!form.customer || !form.item || !form.unitPrice) {
-      alert("Customer, item and unit price are required.");
-      return;
-    }
-    const q = {
-      id: `QT-${String(Date.now()).slice(-6)}`,
-      ...form,
-      quantity: Number(form.quantity || 1),
-      unitPrice: Number(form.unitPrice || 0),
-      subtotal,
-      vat,
-      amount: grandTotal,
-      status: "Draft",
-      date: new Date().toLocaleDateString("en-AE"),
-    };
-    setQuotations(prev => [q, ...(Array.isArray(prev) ? prev : [])]);
-    setSelectedQuote(q);
-    setForm({ customer:"", phone:"", item:"", description:"", quantity:"1", unitPrice:"", validity:"30 days" });
-    setShowForm(false);
+  const save=()=>{
+    const validItems=items.filter(x=>x.item && Number(x.quantity)>0 && Number(x.unitPrice)>=0);
+    if(!form.customer || !validItems.length || !validItems.some(x=>Number(x.unitPrice)>0)){ alert("Customer and at least one priced item are required."); return; }
+    const q={id:`QT-${String(Date.now()).slice(-6)}`,customer:form.customer,phone:form.phone,validity:form.validity,discount,vatRate:Number(form.vatRate||0),notes:form.notes,paymentTerms:form.paymentTerms,items:validItems.map(x=>({...x,quantity:Number(x.quantity),unitPrice:Number(x.unitPrice),total:Number(x.quantity)*Number(x.unitPrice)})),item:validItems[0].item,description:validItems[0].description,quantity:Number(validItems[0].quantity),unitPrice:Number(validItems[0].unitPrice),subtotal,vat,amount:grandTotal,status:"Draft",date:new Date().toLocaleDateString("en-AE")};
+    setQuotations(prev=>[q,...(Array.isArray(prev)?prev:[])]); setSelectedQuote(q); setShowForm(false);
   };
-
-  return (
-    <>
-      <PageTitle
-        eyebrow="SALES · UAE"
-        title={page === "New Quotation" ? "New Quotation" : "Quotations"}
-        subtitle="Create professional quotations using the same clean document structure as an invoice."
-        button={!showForm ? "New Quotation" : null}
-        onClick={() => setShowForm(true)}
-      />
-
-      {showForm && (
-        <div className="quotation-invoice-layout">
-          <div className="card quotation-form-card">
-            <CardHeader eyebrow="QUOTATION DETAILS" title="Create quotation" subtitle="Demo quotation — prices can be edited before saving." />
-            <div className="settings-form">
-              <label>Customer<input value={form.customer} onChange={e=>setForm({...form,customer:e.target.value})} placeholder="Customer name" /></label>
-              <label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+971..." /></label>
-              <label>Item / Service<input value={form.item} onChange={e=>setForm({...form,item:e.target.value})} placeholder="Sofa upholstery, car seat, etc." /></label>
-              <label>Quantity<input type="number" min="1" value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})} /></label>
-              <label>Unit Price (AED)<input type="number" min="0" value={form.unitPrice} onChange={e=>setForm({...form,unitPrice:e.target.value})} placeholder="0.00" /></label>
-              <label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label>
-              <label className="full-field">Description<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Work included, materials, terms..." rows="4" /></label>
-              <div className="quotation-ai-box full-field">
-                <div><Sparkles size={17}/><div><strong>AI quotation helper</strong><small>Generate a professional scope and pricing reminder from your form.</small></div></div>
-                <button type="button" className="secondary-button" onClick={runQuotationAI}><Sparkles size={15}/> Help me</button>
-                {aiText && <p>{aiText}</p>}
-              </div>
-              <div className="settings-form-actions full-field quotation-action-bar"><button type="button" className="primary-button" onClick={save}><Save size={16}/> Save Quotation</button><button type="button" className="secondary-button" onClick={()=>setPrintOpen(true)}><Printer size={16}/> Print Options</button><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button></div>
-            </div>
-          </div>
-
-          <div className="card quotation-document">
-            <div className="invoice-document-head">
-              <div><span className="eyebrow">AL KANZ UPHOLSTERY</span><h2>QUOTATION</h2><p>Dubai, UAE · AED</p></div>
-              <div className="document-number"><strong>QT-PREVIEW</strong><span>Date: {new Date().toLocaleDateString("en-AE")}</span><span>Valid: {form.validity}</span></div>
-            </div>
-            <div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{form.customer || "Customer Name"}</strong><span>{form.phone || "Customer phone"}</span></div></div>
-            <div className="invoice-items">
-              <div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div>
-              <div className="invoice-item-row"><span><strong>{form.item || "Item / Service"}</strong><small>{form.description || "Description of proposed work"}</small></span><span>{form.quantity || 1}</span><span>{money(form.unitPrice)}</span><strong>{money(subtotal)}</strong></div>
-            </div>
-            <div className="document-totals"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(grandTotal)}</strong></div></div>
-            <div className="document-note"><strong>Quotation terms</strong><span>This quotation is a demo estimate and is valid for {form.validity}. Final billing may vary based on approved work or materials.</span></div>
-          </div>
+  const loadQuote=(q)=>{setSelectedQuote(q);setShowForm(false);};
+  return <>
+    <PageTitle eyebrow="SALES · BILLING STYLE" title={page === "New Quotation" ? "New Quotation" : "Quotations"} subtitle="Build quotations with multiple line items, discount, VAT, payment terms and a live customer-facing document." button={!showForm?"New Quotation":null} onClick={()=>{setShowForm(true);setSelectedQuote(null);}} />
+    {showForm && <div className="quote-builder-shell">
+      <section className="card quote-builder-form">
+        <div className="quote-builder-top"><div><span className="eyebrow">QUOTATION BUILDER</span><h2>Create customer estimate</h2><p>Use it like a billing screen: add as many upholstery services and materials as needed.</p></div><div className="quote-draft-pill">DRAFT · AED</div></div>
+        <div className="quote-section"><div className="quote-section-title"><span>01</span><div><b>Customer</b><small>Who is receiving this quotation?</small></div></div><div className="quote-fields"><label>Customer<input value={form.customer} onChange={e=>setForm({...form,customer:e.target.value})} placeholder="Customer / company name" /></label><label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+971 ..." /></label><label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label></div></div>
+        <div className="quote-section"><div className="quote-section-title"><span>02</span><div><b>Items & services</b><small>Add upholstery work, materials, labour or delivery as separate lines.</small></div><button className="primary-button" type="button" onClick={addItem}><Plus size={15}/> Add line</button></div>
+          <div className="quote-line-table"><div className="quote-line-head"><span>ITEM / SERVICE</span><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span><span></span></div>{items.map((x,i)=><div className="quote-line" key={i}><input value={x.item} onChange={e=>setItem(i,"item",e.target.value)} placeholder="Sofa upholstery"/><input value={x.description} onChange={e=>setItem(i,"description",e.target.value)} placeholder="Leather / fabric / labour"/><input type="number" min="1" value={x.quantity} onChange={e=>setItem(i,"quantity",e.target.value)}/><input type="number" min="0" value={x.unitPrice} onChange={e=>setItem(i,"unitPrice",e.target.value)} placeholder="0.00"/><strong>{money(Number(x.quantity||0)*Number(x.unitPrice||0))}</strong><button type="button" className="quote-remove" onClick={()=>removeItem(i)}><Trash2 size={15}/></button></div>)}</div>
         </div>
-      )}
-
-      {!showForm && (
-        <div className="table-card">
-          <div className="table-head"><span>QUOTE</span><span>CUSTOMER</span><span>ITEM</span><span>AMOUNT</span><span>STATUS</span></div>
-          {safeQuotations.length === 0 ? <EmptyState icon={FileText} title="No quotations yet" text="Create your first quotation." /> : safeQuotations.map(q => (
-            <button type="button" className="table-row quotation-row-button" key={q.id} onClick={()=>setSelectedQuote(q)}>
-              <strong>{q.id}</strong><span>{q.customer}</span><span>{q.item}</span><strong>{money(q.amount)}</strong><Status status={q.status}/>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {selectedQuote && (
-        <div className="modal-backdrop">
-          <div className="card quotation-document quotation-modal-document">
-            <button className="job-drawer-close" style={{position:"absolute",right:18,top:18}} onClick={()=>setSelectedQuote(null)}><X size={20}/></button>
-            <div className="invoice-document-head"><div><span className="eyebrow">AL KANZ UPHOLSTERY</span><h2>QUOTATION</h2><p>Dubai, UAE · AED</p></div><div className="document-number"><strong>{selectedQuote.id}</strong><span>{selectedQuote.date}</span><span>Valid: {selectedQuote.validity}</span></div></div>
-            <div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{selectedQuote.customer}</strong><span>{selectedQuote.phone || "—"}</span></div></div>
-            <div className="invoice-items"><div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div><div className="invoice-item-row"><span><strong>{selectedQuote.item}</strong><small>{selectedQuote.description || "—"}</small></span><span>{selectedQuote.quantity}</span><span>{money(selectedQuote.unitPrice)}</span><strong>{money(selectedQuote.subtotal)}</strong></div></div>
-            <div className="document-totals"><div><span>Subtotal</span><strong>{money(selectedQuote.subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(selectedQuote.vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(selectedQuote.amount)}</strong></div></div>
-            <div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print Quotation</button><button className="secondary-button" onClick={()=>setPrintOpen(true)}><SlidersHorizontal size={16}/> Print Options</button><button className="secondary-button" onClick={()=>{ const copy={...selectedQuote,id:`QT-${String(Date.now()).slice(-6)}`,status:"Draft",date:new Date().toLocaleDateString("en-AE")}; setQuotations(prev=>[copy,...prev]); setSelectedQuote(copy); }}><RefreshCw size={16}/> Duplicate</button><button className="secondary-button" onClick={()=>{ setSelectedQuote(null); setShowForm(true); setForm({customer:selectedQuote.customer,phone:selectedQuote.phone||"",item:selectedQuote.item,description:selectedQuote.description||"",quantity:String(selectedQuote.quantity||1),unitPrice:String(selectedQuote.unitPrice||0),validity:selectedQuote.validity||"30 days"}); }}> <Edit3 size={16}/> Edit</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div>
-          </div>
-        </div>
-      )}
-
-      {printOpen && (
-        <PrintOptionsModal
-          title="Quotation printing"
-          close={() => setPrintOpen(false)}
-          options={[
-            ["Print quotation", "Clean customer-facing quotation", () => window.print()],
-            ["Print customer copy", "Print another copy for the customer file", () => window.print()],
-            ["Print internal copy", "Print a copy for workshop records", () => window.print()],
-          ]}
-        />
-      )}
-    </>
-  );
+        <div className="quote-section"><div className="quote-section-title"><span>03</span><div><b>Terms & notes</b><small>Set payment, validity and customer-facing notes.</small></div></div><div className="quote-fields"><label>Discount (AED)<input type="number" min="0" value={form.discount} onChange={e=>setForm({...form,discount:e.target.value})}/></label><label>VAT %<input type="number" min="0" value={form.vatRate} onChange={e=>setForm({...form,vatRate:e.target.value})}/></label><label>Payment terms<select value={form.paymentTerms} onChange={e=>setForm({...form,paymentTerms:e.target.value})}><option>50% advance · 50% on delivery</option><option>100% advance</option><option>30% advance · balance on delivery</option><option>Payment on completion</option></select></label><label className="full-field">Notes<textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Material approval, delivery expectations, special instructions..."/></label></div></div>
+        <div className="quote-ai-panel"><div className="quote-ai-title"><div className="ai-orb"><Sparkles size={18}/></div><div><b>AI quotation assistant</b><small>Improve scope, pricing checks and customer wording.</small></div><button className="primary-button" type="button" onClick={runQuotationAI}><Sparkles size={15}/> Analyze quotation</button></div><div className="quote-ai-chips"><button type="button" onClick={()=>setAiText("Add measurement, material grade, colour, stitching and finishing details before customer approval.")}>Scope check</button><button type="button" onClick={()=>setAiText("Consider separating material, labour and delivery lines so the customer can understand the estimate clearly.")}>Pricing suggestion</button><button type="button" onClick={()=>setAiText("Recommended wording: work starts after quotation approval and the agreed advance payment is received.")}>Payment wording</button></div>{aiText&&<div className="quote-ai-result"><Sparkles size={15}/><span>{aiText}</span></div>}</div>
+        <div className="quote-save-bar"><div><small>GRAND TOTAL</small><strong>{money(grandTotal)}</strong></div><button className="secondary-button" type="button" onClick={()=>setShowForm(false)}>Cancel</button><button className="primary-button" type="button" onClick={save}><Save size={16}/> Save quotation</button></div>
+      </section>
+      <aside className="card quote-live-preview"><div className="quote-preview-head"><span>LIVE PREVIEW</span><b>QUOTATION</b></div><div className="quote-paper"><div className="quote-paper-brand"><div><strong>AL KANZ</strong><small>UPHOLSTERY</small></div><b>QUOTATION</b></div><div className="quote-paper-meta"><span>TO<br/><b>{form.customer||"Customer name"}</b><small>{form.phone||"Customer phone"}</small></span><span>DATE<br/><b>{new Date().toLocaleDateString("en-AE")}</b><small>Valid {form.validity}</small></span></div><div className="quote-paper-items"><div><span>DESCRIPTION</span><span>QTY</span><span>AMOUNT</span></div>{items.map((x,i)=><div key={i}><span><b>{x.item||"Item / service"}</b><small>{x.description||"—"}</small></span><span>{x.quantity||1}</span><strong>{money(Number(x.quantity||0)*Number(x.unitPrice||0))}</strong></div>)}</div><div className="quote-paper-total"><span>Subtotal <b>{money(subtotal)}</b></span><span>Discount <b>- {money(discount)}</b></span><span>VAT ({form.vatRate}%) <b>{money(vat)}</b></span><strong>Grand Total <b>{money(grandTotal)}</b></strong></div><div className="quote-paper-terms"><b>Payment terms</b><span>{form.paymentTerms}</span><b>Notes</b><span>{form.notes||"Final work and material selection subject to customer approval."}</span></div></div></aside>
+    </div>}
+    {!showForm && <div className="quotation-list-shell"><div className="quotation-list-toolbar"><div><span>QUOTATION REGISTER</span><strong>{safeQuotations.length} saved quotations</strong></div><button className="secondary-button" onClick={()=>{setShowForm(true);setSelectedQuote(null);}}><Plus size={15}/> New quotation</button></div><div className="table-card"><div className="table-head"><span>QUOTE</span><span>CUSTOMER</span><span>ITEMS</span><span>AMOUNT</span><span>STATUS</span></div>{safeQuotations.length===0?<EmptyState icon={FileText} title="No quotations yet" text="Create your first billing-style quotation."/>:safeQuotations.map(q=><button type="button" className="table-row quotation-row-button" key={q.id} onClick={()=>loadQuote(q)}><strong>{q.id}</strong><span>{q.customer}</span><span>{q.items?.length || 1} line{(q.items?.length||1)===1?"":"s"}</span><strong>{money(q.amount)}</strong><Status status={q.status}/></button>)}</div></div>}
+    {selectedQuote && <div className="modal-backdrop"><div className="card quotation-document quotation-modal-document"><button className="job-drawer-close" style={{position:"absolute",right:18,top:18}} onClick={()=>setSelectedQuote(null)}><X size={20}/></button><div className="invoice-document-head"><div><span className="eyebrow">AL KANZ UPHOLSTERY</span><h2>QUOTATION</h2><p>Dubai, UAE · AED</p></div><div className="document-number"><strong>{selectedQuote.id}</strong><span>{selectedQuote.date}</span><span>Valid: {selectedQuote.validity}</span></div></div><div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{selectedQuote.customer}</strong><span>{selectedQuote.phone||"—"}</span></div></div><div className="invoice-items"><div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div>{(selectedQuote.items||[{item:selectedQuote.item,description:selectedQuote.description,quantity:selectedQuote.quantity,unitPrice:selectedQuote.unitPrice,total:selectedQuote.subtotal}]).map((x,i)=><div className="invoice-item-row" key={i}><span><strong>{x.item}</strong><small>{x.description||"—"}</small></span><span>{x.quantity}</span><span>{money(x.unitPrice)}</span><strong>{money(x.total ?? Number(x.quantity||0)*Number(x.unitPrice||0))}</strong></div>)}</div><div className="document-totals"><div><span>Subtotal</span><strong>{money(selectedQuote.subtotal)}</strong></div><div><span>Discount</span><strong>- {money(selectedQuote.discount||0)}</strong></div><div><span>VAT ({selectedQuote.vatRate||5}%)</span><strong>{money(selectedQuote.vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(selectedQuote.amount)}</strong></div></div><div className="document-note"><strong>Payment terms</strong><span>{selectedQuote.paymentTerms||"50% advance · 50% on delivery"}</span><strong>Notes</strong><span>{selectedQuote.notes||"Final work and material selection subject to customer approval."}</span></div><div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print quotation</button><button className="secondary-button" onClick={()=>{const copy={...selectedQuote,id:`QT-${String(Date.now()).slice(-6)}`,status:"Draft",date:new Date().toLocaleDateString("en-AE")};setQuotations(prev=>[copy,...prev]);setSelectedQuote(copy);}}><RefreshCw size={16}/> Duplicate</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div></div></div>}
+    {printOpen&&<PrintOptionsModal title="Quotation printing" close={()=>setPrintOpen(false)} options={[["Print quotation","Customer-facing quotation",()=>window.print()],["Print customer copy","Customer file copy",()=>window.print()],["Print internal copy","Workshop record copy",()=>window.print()]]}/>} 
+  </>;
 }
 
 /* ============================================================
@@ -5856,69 +5878,43 @@ button {
 
 /* THEMES + SIDEBAR COLLAPSE */
 .app.theme-light {
-  --bg:#f7f9fb; --white:#fff; --soft:#fbfcfd; --green:#176f62;
-  --green-dark:#0e544a; --green-light:#e6f5f1; --sidebar:#174b45;
-  --sidebar-2:#216158; --text:#18272b; --text-2:#53666a; --muted:#8b989b;
-  --border:#e2e8eb;
+  --bg:#f7f9fb; --white:#ffffff; --soft:#fbfcfd; --green:#176f62; --green-dark:#0e544a; --green-light:#e6f5f1;
+  --sidebar:#174b45; --sidebar-2:#216158; --text:#18272b; --text-2:#53666a; --muted:#8b989b; --border:#e2e8eb;
 }
-.app.theme-dark {
-  --bg:#111817; --white:#1a2422; --soft:#202b29; --green:#67c5a8;
-  --green-dark:#49a88e; --green-light:#1d3b34; --sidebar:#091f1c;
-  --sidebar-2:#123a34; --sidebar-text:#b6cbc6; --text:#edf5f2;
-  --text-2:#b3c3bf; --muted:#849692; --border:#30403d;
-  --blue:#78b5dc; --blue-light:#1c3443; --orange:#d6a15e;
-  --orange-light:#3c3020; --purple:#a98bd0; --purple-light:#302741;
-  --red:#e08b83; --red-light:#3c2927; --shadow:0 8px 30px rgba(0,0,0,.25);
+.app.theme-dark, .app.theme-night {
+  --bg:#080b0f; --white:#10151b; --soft:#0c1116; --green:#a98cff; --green-dark:#8068d8; --green-light:#1b1630;
+  --sidebar:#05070a; --sidebar-2:#0d1117; --sidebar-text:#aeb7c2; --text:#f4f5f7; --text-2:#b8c0ca; --muted:#7e8995; --border:#202833;
+  --blue:#72b7ff; --blue-light:#111e2b; --orange:#ffb86b; --orange-light:#2a1c10; --purple:#b99cff; --purple-light:#211a32;
+  --red:#ff8f8f; --red-light:#2b1719; --shadow:0 22px 55px rgba(0,0,0,.48);
 }
-.app.theme-dark .topbar { background:rgba(26,36,34,.94); }
-.app.theme-dark .card,.app.theme-dark .jobs-modern-card,.app.theme-dark .table-card,
-.app.theme-dark .modal,.app.theme-dark .job-drawer,.app.theme-dark .settings-card,
-.app.theme-dark .appearance-card { background:var(--white); border-color:var(--border); color:var(--text); }
-.app.theme-dark .global-search,.app.theme-dark .jobs-search-modern,.app.theme-dark .jobs-status-filter,
-.app.theme-dark .field input,.app.theme-dark .field select,.app.theme-dark .settings-form input {
-  background:#202b29; color:var(--text); border-color:var(--border);
-}
-.app.theme-dark .jobs-page-header h1,.app.theme-dark .jobs-breadcrumb strong,
-.app.theme-dark .card h2,.app.theme-dark .page-title h1 { color:var(--text); }
-.app.theme-dark .jobs-page-header p,.app.theme-dark .jobs-eyebrow,
-.app.theme-dark .jobs-breadcrumb,.app.theme-dark .card-header p,.app.theme-dark .page-title p { color:var(--muted); }
+.app.theme-dark, .app.theme-night { background:var(--bg); color:var(--text); }
+.app.theme-dark .topbar, .app.theme-night .topbar { background:rgba(8,11,15,.96); border-color:#1d252f; color:var(--text); }
+.app.theme-dark .card,.app.theme-dark .jobs-modern-card,.app.theme-dark .table-card,.app.theme-dark .modal,.app.theme-dark .job-drawer,.app.theme-dark .settings-card,.app.theme-dark .appearance-card,
+.app.theme-night .card,.app.theme-night .jobs-modern-card,.app.theme-night .table-card,.app.theme-night .modal,.app.theme-night .job-drawer,.app.theme-night .settings-card,.app.theme-night .appearance-card { background:#10151b; border-color:#202833; color:#f4f5f7; box-shadow:var(--shadow); }
+.app.theme-dark input,.app.theme-dark select,.app.theme-dark textarea,.app.theme-night input,.app.theme-night select,.app.theme-night textarea,
+.app.theme-dark .global-search,.app.theme-dark .jobs-search-modern,.app.theme-dark .jobs-status-filter,.app.theme-night .global-search,.app.theme-night .jobs-search-modern,.app.theme-night .jobs-status-filter { background:#090d12 !important; color:#f4f5f7 !important; border-color:#27313d !important; }
+.app.theme-dark .field input:focus,.app.theme-dark .field select:focus,.app.theme-dark textarea:focus,.app.theme-night .field input:focus,.app.theme-night .field select:focus,.app.theme-night textarea:focus { border-color:#a98cff !important; box-shadow:0 0 0 3px rgba(169,140,255,.12); }
+.app.theme-dark .page-title h1,.app.theme-dark .card h2,.app.theme-dark .card h3,.app.theme-night .page-title h1,.app.theme-night .card h2,.app.theme-night .card h3 { color:#f4f5f7; }
+.app.theme-dark .page-title p,.app.theme-dark .card-header p,.app.theme-night .page-title p,.app.theme-night .card-header p { color:#7e8995; }
+.app.theme-dark .table-head,.app.theme-night .table-head { background:#0b1015; color:#7e8995; border-color:#202833; }
+.app.theme-dark .table-row,.app.theme-night .table-row { border-color:#202833; color:#dce1e6; }
+.app.theme-dark .table-row:hover,.app.theme-night .table-row:hover { background:#151b23; }
+.app.theme-dark .secondary-button,.app.theme-night .secondary-button { background:#141a21; color:#e6e9ed; border-color:#29333f; }
+.app.theme-dark .secondary-button:hover,.app.theme-night .secondary-button:hover { background:#1a222c; border-color:#3b4654; }
+.app.theme-dark .mobile-menu,.app.theme-night .mobile-menu { color:#aeb7c2; }
+.app.theme-dark .mobile-menu:hover,.app.theme-night .mobile-menu:hover { background:#151b23; }
+.app.theme-dark .theme-toggle-button,.app.theme-night .theme-toggle-button { background:#15121f; color:#d7caff; border-color:#32284d; }
 
 .sidebar-overlay { display:none; }
 .mobile-menu { width:38px;height:38px;display:grid;place-items:center;border-radius:9px;background:transparent;color:#667c80; }
 .mobile-menu:hover { background:#eef4f4; }
-
-@media(min-width:851px) {
-  .sidebar-collapsed .sidebar { width:78px; }
-  .sidebar-collapsed .main { width:calc(100% - 78px); margin-left:78px; }
-  .sidebar-collapsed .brand-area { padding-left:17px; padding-right:17px; }
-  .sidebar-collapsed .brand > div:last-child,.sidebar-collapsed .workshop-status,
-  .sidebar-collapsed .nav-section-title,.sidebar-collapsed .nav-item > span,
-  .sidebar-collapsed .nav-item > svg:last-child,.sidebar-collapsed .sub-menu,
-  .sidebar-collapsed .account-card > div:not(.account-avatar),
-  .sidebar-collapsed .account-card > svg,.sidebar-collapsed .logout { display:none; }
-  .sidebar-collapsed .brand { justify-content:center; }
-  .sidebar-collapsed .nav-scroll { padding-left:10px;padding-right:10px; }
-  .sidebar-collapsed .nav-item { justify-content:center;padding:0; }
-  .sidebar-collapsed .sidebar-account { padding:12px 10px; }
-  .sidebar-collapsed .account-card { justify-content:center; }
-}
+@media(min-width:851px) { .sidebar-collapsed .sidebar { width:78px; } .sidebar-collapsed .main { width:calc(100% - 78px); margin-left:78px; } .sidebar-collapsed .brand-area { padding-left:17px; padding-right:17px; } .sidebar-collapsed .brand > div:last-child,.sidebar-collapsed .workshop-status,.sidebar-collapsed .nav-section-title,.sidebar-collapsed .nav-item > span,.sidebar-collapsed .nav-item > svg:last-child,.sidebar-collapsed .sub-menu,.sidebar-collapsed .account-card > div:not(.account-avatar),.sidebar-collapsed .account-card > svg,.sidebar-collapsed .logout { display:none; } .sidebar-collapsed .brand { justify-content:center; } .sidebar-collapsed .nav-scroll { padding-left:10px;padding-right:10px; } .sidebar-collapsed .nav-item { justify-content:center;padding:0; } .sidebar-collapsed .sidebar-account { padding:12px 10px; } .sidebar-collapsed .account-card { justify-content:center; } }
 .theme-options { display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:0 25px 25px; }
 .theme-option { min-height:84px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--soft);color:var(--text);display:flex;align-items:center;gap:11px;text-align:left;transition:.2s; }
-.theme-option:hover { border-color:var(--green);transform:translateY(-1px); }
-.theme-option.active { border-color:var(--green);box-shadow:0 0 0 2px var(--green-light); }
-.theme-option > div { flex:1; }
-.theme-option strong,.theme-option small { display:block; }
-.theme-option strong { font-size:12px; }
-.theme-option small { margin-top:3px;color:var(--muted);font-size:10px; }
-.theme-preview { width:38px;height:38px;flex:0 0 38px;border-radius:9px;border:1px solid var(--border); }
-.theme-preview-default { background:linear-gradient(135deg,#0d3d37 0 50%,#b9df79 50%); }
-.theme-preview-light { background:linear-gradient(135deg,#fff 0 50%,#e6f5f1 50%); }
-.theme-preview-dark { background:linear-gradient(135deg,#091f1c 0 50%,#67c5a8 50%); }
-@media(max-width:850px) {
-  .sidebar-overlay { display:block;position:fixed;inset:0;z-index:45;border:0;background:rgba(0,0,0,.35); }
-  .sidebar { width:250px; }
-  .theme-options { grid-template-columns:1fr; }
-}
+.theme-option:hover { border-color:var(--green);transform:translateY(-1px); } .theme-option.active { border-color:var(--green);box-shadow:0 0 0 2px var(--green-light); } .theme-option > div { flex:1; } .theme-option strong,.theme-option small { display:block; } .theme-option strong { font-size:12px; } .theme-option small { margin-top:3px;color:var(--muted);font-size:10px; }
+.theme-preview { width:38px;height:38px;flex:0 0 38px;border-radius:9px;border:1px solid var(--border); } .theme-preview-default { background:linear-gradient(135deg,#0d3d37 0 50%,#b9df79 50%); } .theme-preview-light { background:linear-gradient(135deg,#fff 0 50%,#e6f5f1 50%); } .theme-preview-dark { background:linear-gradient(135deg,#080b0f 0 50%,#a98cff 50%); }
+@media(max-width:850px) { .sidebar-overlay { display:block;position:fixed;inset:0;z-index:45;border:0;background:rgba(0,0,0,.35); } .sidebar { width:250px; } .theme-options { grid-template-columns:1fr; } }
+
 
 `;
 
@@ -6685,7 +6681,49 @@ button:active {
 }
 `;
 
-const CSS = BASE_CSS + AL_KANZ_JOB_UI + AL_KANZ_ANIMATED_UI;
+
+const AL_KANZ_PRO_UI = `
+.customer-command-grid,.dashboard-insight-grid,.report-insight-strip{display:grid;gap:14px;grid-template-columns:repeat(4,1fr);margin-bottom:18px}.customer-command-card,.report-insight{padding:20px;border:1px solid var(--border);border-radius:18px;background:var(--white);box-shadow:var(--shadow);transition:.25s}.customer-command-card:hover,.report-insight:hover{transform:translateY(-3px)}.customer-command-card span,.report-insight span{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.13em}.customer-command-card strong,.report-insight strong{display:block;margin-top:9px;font-size:25px;letter-spacing:-.04em;color:var(--text)}.customer-command-card small,.report-insight small{display:block;margin-top:5px;color:var(--muted);font-size:10px}.customer-command-card.warning strong{color:var(--orange)}.customer-command-card.success strong{color:var(--green)}.customer-workspace-grid{display:grid;grid-template-columns:1.45fr .8fr;gap:18px;margin-bottom:18px}.customer-insight-card,.customer-action-card{padding:22px}.customer-insight-list{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:15px 0 20px}.customer-insight-list>div{padding:13px;border:1px solid var(--border);border-radius:13px;background:var(--soft)}.customer-insight-list span{display:flex;gap:6px;align-items:center;font-size:10px;color:var(--muted)}.customer-insight-list strong{display:block;margin-top:8px;font-size:19px}.customer-ranking-title{display:flex;justify-content:space-between;color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.12em;margin-bottom:9px}.customer-ranking-title small{font-weight:500;letter-spacing:0}.customer-ranking-row{display:grid;grid-template-columns:24px 150px 1fr 25px;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--border);font-size:11px}.customer-ranking-row b{font-size:10px;color:var(--muted)}.customer-ranking-row i{height:5px;border-radius:99px;background:linear-gradient(90deg,var(--green),#8dd7c4);display:block}.customer-ranking-row strong{text-align:right}.customer-action-card button{width:100%;display:flex;align-items:center;gap:11px;padding:13px 2px;background:transparent;color:var(--text);border-bottom:1px solid var(--border);text-align:left}.customer-action-card button:last-child{border-bottom:0}.customer-action-card button>span{flex:1}.customer-action-card button b,.customer-action-card button small{display:block}.customer-action-card button small{margin-top:3px;color:var(--muted);font-size:10px}.customer-filter-tabs{display:flex;gap:7px;margin:8px 0 14px}.customer-filter-tabs button{border:1px solid var(--border);background:var(--soft);color:var(--muted);border-radius:99px;padding:8px 13px;font-size:10px;font-weight:800}.customer-filter-tabs button span{margin-left:5px}.customer-filter-tabs button.active{background:var(--green-light);color:var(--green);border-color:var(--green)}.customer-card-pro{transition:.25s}.customer-card-pro:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(20,53,57,.1)}.customer-health{margin-left:auto;margin-right:5px;font-size:9px;color:var(--muted);display:flex;align-items:center;gap:5px}.customer-health span{width:6px;height:6px;border-radius:50%;display:inline-block}.customer-health .healthy{background:#70c99f;box-shadow:0 0 0 4px rgba(112,201,159,.1)}.customer-health .needs-attention{background:#efaa60;box-shadow:0 0 0 4px rgba(239,170,96,.1)}.customer-card-tags{display:flex;gap:7px;margin-top:13px}.customer-card-tags span{display:flex;align-items:center;gap:4px;padding:6px 8px;border-radius:8px;background:var(--soft);color:var(--muted);font-size:9px}.customer-card-footer{display:flex;justify-content:space-between;align-items:center;margin-top:15px;padding-top:12px;border-top:1px solid var(--border)}.customer-card-footer button{background:transparent;color:var(--green);font-weight:800;font-size:10px;display:flex;align-items:center;gap:5px}.dashboard-insight-grid{grid-template-columns:1fr 1fr}.dashboard-insight-card{padding:21px}.checklist-row{display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border)}.checklist-row>span{width:28px;height:28px;display:grid;place-items:center;border-radius:9px;background:var(--soft);color:var(--muted)}.checklist-row .check-ok{color:var(--green);background:var(--green-light)}.checklist-row b,.checklist-row small{display:block}.checklist-row small{margin-top:3px;color:var(--muted);font-size:9px}.checklist-row strong{font-size:11px}.signal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.signal-grid>div{padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--soft)}.signal-grid span,.signal-grid b{display:block}.signal-grid span{color:var(--muted);font-size:10px}.signal-grid b{font-size:19px;margin:5px 0}.signal-grid i{display:block;height:5px;background:linear-gradient(90deg,var(--green),#8dd7c4);border-radius:99px}.report-insight-strip{grid-template-columns:repeat(4,1fr)}.report-insight strong{font-size:23px}.quote-builder-shell{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(390px,.8fr);gap:18px;align-items:start}.quote-builder-form,.quote-live-preview{padding:0;overflow:hidden}.quote-builder-top{padding:24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:15px}.quote-builder-top h2{margin:5px 0 4px;font-size:21px}.quote-builder-top p{color:var(--muted);font-size:11px}.quote-draft-pill{height:max-content;padding:7px 10px;border-radius:99px;background:var(--green-light);color:var(--green);font-size:9px;font-weight:900}.quote-section{padding:22px;border-bottom:1px solid var(--border)}.quote-section-title{display:flex;align-items:center;gap:10px;margin-bottom:16px}.quote-section-title>span{width:27px;height:27px;border-radius:8px;background:var(--soft);display:grid;place-items:center;font-size:9px;font-weight:900;color:var(--muted)}.quote-section-title>div{flex:1}.quote-section-title b,.quote-section-title small{display:block}.quote-section-title small{margin-top:3px;color:var(--muted);font-size:9px}.quote-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.quote-fields label{display:block;color:var(--muted);font-size:9px;font-weight:800}.quote-fields input,.quote-fields select,.quote-fields textarea{width:100%;margin-top:6px;border:1px solid var(--border);border-radius:10px;background:var(--soft);padding:10px 11px;color:var(--text);outline:0}.quote-fields .full-field{grid-column:1/-1}.quote-line-table{overflow-x:auto;border:1px solid var(--border);border-radius:12px}.quote-line-head,.quote-line{min-width:760px;display:grid;grid-template-columns:1.25fr 1.4fr 70px 110px 105px 35px;gap:8px;align-items:center;padding:10px}.quote-line-head{background:var(--soft);font-size:8px;font-weight:900;color:var(--muted)}.quote-line{border-top:1px solid var(--border)}.quote-line input{width:100%;min-width:0;padding:9px;border:1px solid var(--border);background:var(--soft);border-radius:8px;color:var(--text)}.quote-line strong{text-align:right;font-size:11px}.quote-remove{width:30px;height:30px;border-radius:8px;background:transparent;color:var(--muted)}.quote-remove:hover{background:var(--red-light);color:var(--red)}.quote-ai-panel{margin:18px 22px;padding:16px;border-radius:15px;border:1px solid rgba(169,140,255,.25);background:linear-gradient(135deg,rgba(169,140,255,.08),rgba(113,183,255,.05))}.quote-ai-title{display:flex;align-items:center;gap:10px}.quote-ai-title>div:nth-child(2){flex:1}.quote-ai-title b,.quote-ai-title small{display:block}.quote-ai-title small{margin-top:3px;color:var(--muted);font-size:9px}.ai-orb{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:var(--purple-light);color:var(--purple)}.quote-ai-chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.quote-ai-chips button{padding:7px 10px;border-radius:99px;border:1px solid var(--border);background:var(--soft);color:var(--text);font-size:9px}.quote-ai-result{display:flex;gap:8px;margin-top:12px;padding:11px;border-radius:10px;background:var(--soft);color:var(--text);font-size:10px;line-height:1.5}.quote-save-bar{display:flex;align-items:center;gap:8px;padding:15px 22px;background:var(--soft);border-top:1px solid var(--border)}.quote-save-bar>div{margin-right:auto}.quote-save-bar small,.quote-save-bar strong{display:block}.quote-save-bar small{font-size:8px;color:var(--muted);font-weight:900}.quote-save-bar strong{font-size:20px}.quote-live-preview{position:sticky;top:82px;background:#0f141a}.quote-preview-head{padding:15px 18px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border);font-size:9px;letter-spacing:.12em}.quote-preview-head span{color:var(--muted);font-weight:900}.quote-preview-head b{color:var(--green)}.quote-paper{margin:18px;background:#fff;color:#18272b;border-radius:8px;padding:23px;box-shadow:0 20px 50px rgba(0,0,0,.25)}.quote-paper-brand{display:flex;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid #dfe5e5}.quote-paper-brand strong,.quote-paper-brand small{display:block}.quote-paper-brand strong{font-size:16px;letter-spacing:.08em}.quote-paper-brand small{font-size:7px;letter-spacing:.2em;color:#879597}.quote-paper-brand>b{font-size:9px;letter-spacing:.14em;color:#9b6b3b}.quote-paper-meta{display:flex;justify-content:space-between;padding:16px 0;border-bottom:1px solid #e5e9e9}.quote-paper-meta span{font-size:7px;color:#8b989b;letter-spacing:.1em}.quote-paper-meta b,.quote-paper-meta small{display:block;color:#263437;margin-top:4px;letter-spacing:0}.quote-paper-meta b{font-size:10px}.quote-paper-meta small{font-size:8px}.quote-paper-items>div{display:grid;grid-template-columns:1fr 35px 80px;gap:6px;padding:10px 0;border-bottom:1px solid #edf0f0;font-size:8px}.quote-paper-items>div:first-child{color:#8b989b;font-weight:900;font-size:7px}.quote-paper-items b,.quote-paper-items small{display:block}.quote-paper-items b{font-size:9px;color:#243235}.quote-paper-items small{font-size:7px;color:#8b989b;margin-top:3px}.quote-paper-items strong{text-align:right}.quote-paper-total{margin:15px 0 0 auto;width:72%;font-size:8px}.quote-paper-total span,.quote-paper-total>strong{display:flex;justify-content:space-between;padding:5px 0}.quote-paper-total>strong{border-top:1px solid #dce2e2;margin-top:5px;padding-top:10px;font-size:10px}.quote-paper-terms{border-top:1px solid #e2e6e6;margin-top:15px;padding-top:12px}.quote-paper-terms b,.quote-paper-terms span{display:block}.quote-paper-terms b{font-size:7px;text-transform:uppercase;color:#8b989b;margin-top:7px}.quote-paper-terms span{font-size:8px;line-height:1.45;margin-top:3px}.quotation-list-shell{margin-top:6px}.quotation-list-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.quotation-list-toolbar span,.quotation-list-toolbar strong{display:block}.quotation-list-toolbar span{font-size:9px;color:var(--muted);font-weight:900;letter-spacing:.13em}.quotation-list-toolbar strong{font-size:15px;margin-top:3px}.app.theme-dark .quote-live-preview,.app.theme-night .quote-live-preview{background:#0b1015;border-color:#202833}.app.theme-dark .quote-paper,.app.theme-night .quote-paper{background:#111820;color:#eef2f5;box-shadow:none}.app.theme-dark .quote-paper-brand,.app.theme-night .quote-paper-brand,.app.theme-dark .quote-paper-meta,.app.theme-night .quote-paper-meta,.app.theme-dark .quote-paper-items>div,.app.theme-night .quote-paper-items>div,.app.theme-dark .quote-paper-total>strong,.app.theme-night .quote-paper-total>strong,.app.theme-dark .quote-paper-terms,.app.theme-night .quote-paper-terms{border-color:#27323d}.app.theme-dark .quote-paper-meta b,.app.theme-dark .quote-paper-items b,.app.theme-dark .quote-paper-brand strong,.app.theme-night .quote-paper-meta b,.app.theme-night .quote-paper-items b,.app.theme-night .quote-paper-brand strong{color:#eef2f5}.app.theme-dark .quote-paper-meta small,.app.theme-dark .quote-paper-items small,.app.theme-night .quote-paper-meta small,.app.theme-night .quote-paper-items small{color:#7e8995}
+@media(max-width:1100px){.quote-builder-shell{grid-template-columns:1fr}.quote-live-preview{position:static}.customer-command-grid,.report-insight-strip{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.customer-workspace-grid,.dashboard-insight-grid{grid-template-columns:1fr}.customer-insight-list,.quote-fields{grid-template-columns:1fr}.customer-ranking-row{grid-template-columns:24px 110px 1fr 25px}.quote-builder-top,.quote-save-bar{flex-wrap:wrap}.quote-save-bar>div{width:100%;margin-bottom:5px}.quote-ai-title{flex-wrap:wrap}.quote-ai-title .primary-button{width:100%}.customer-command-grid,.report-insight-strip{grid-template-columns:1fr 1fr}}
+`;
+
+const AL_KANZ_NIGHT_FINISH = `
+/* Full Night Cinema theme: no white cards and no green UI surfaces */
+.app.theme-dark,.app.theme-night{background:#07090d!important;color:#eef2f7!important}
+.app.theme-dark .main,.app.theme-night .main{background:#07090d!important}
+.app.theme-dark .content,.app.theme-night .content{background:radial-gradient(circle at 80% 0%,rgba(133,103,255,.07),transparent 30%),#07090d!important}
+.app.theme-dark .card,.app.theme-dark .table-card,.app.theme-dark .jobs-modern-card,.app.theme-dark .settings-card,.app.theme-dark .appearance-card,.app.theme-dark .modal,.app.theme-dark .job-drawer,.app.theme-night .card,.app.theme-night .table-card,.app.theme-night .jobs-modern-card,.app.theme-night .settings-card,.app.theme-night .appearance-card,.app.theme-night .modal,.app.theme-night .job-drawer{background:#0d1117!important;border:1px solid #1c2530!important;color:#eef2f7!important;box-shadow:0 22px 55px rgba(0,0,0,.42)!important}
+.app.theme-dark .soft,.app.theme-night .soft{background:#0a0e13!important}
+.app.theme-dark .stat,.app.theme-night .stat,.app.theme-dark .account-big-card,.app.theme-night .account-big-card,.app.theme-dark .report-box,.app.theme-night .report-box,.app.theme-dark .customer-command-card,.app.theme-night .customer-command-card,.app.theme-dark .report-insight,.app.theme-night .report-insight{background:#0d1117!important;border-color:#1c2530!important;color:#eef2f7!important}
+.app.theme-dark .stats,.app.theme-night .stats{background:transparent!important}
+.app.theme-dark .nav-item.selected,.app.theme-night .nav-item.selected{background:#171326!important;color:#f4efff!important;box-shadow:inset 3px 0 #a98cff!important}
+.app.theme-dark .nav-item:hover,.app.theme-night .nav-item:hover{background:#11161d!important;color:#fff!important}
+.app.theme-dark .workshop-status,.app.theme-night .workshop-status{background:#0d1218!important;border:1px solid #1d2731!important;color:#aeb7c2!important}
+.app.theme-dark .primary-button,.app.theme-night .primary-button{background:linear-gradient(135deg,#8e72ee,#b09aff)!important;color:#08070c!important;border-color:transparent!important;box-shadow:0 8px 24px rgba(145,113,240,.22)!important}
+.app.theme-dark .primary-button:hover,.app.theme-night .primary-button:hover{filter:brightness(1.08)}
+.app.theme-dark .secondary-button,.app.theme-night .secondary-button{background:#11161d!important;color:#dce2e9!important;border-color:#27313d!important}
+.app.theme-dark .dashboard-topline,.app.theme-night .dashboard-topline,.app.theme-dark .dashboard-hero,.app.theme-night .dashboard-hero{background:linear-gradient(135deg,#0d1117,#11101a)!important;border-color:#1d2631!important}
+.app.theme-dark .dashboard-topline h1,.app.theme-night .dashboard-topline h1,.app.theme-dark .dashboard-hero h1,.app.theme-night .dashboard-hero h1{color:#f5f7fa!important}
+.app.theme-dark .hero-pills span,.app.theme-night .hero-pills span,.app.theme-dark .command-metrics div,.app.theme-night .command-metrics div{background:#0b1016!important;border-color:#1d2731!important;color:#aeb7c2!important}
+.app.theme-dark .ring-progress,.app.theme-night .ring-progress{background:conic-gradient(#a98cff var(--progress),#20202b 0)!important}
+.app.theme-dark .mini-stat-progress,.app.theme-night .mini-stat-progress{background:#202630!important}.app.theme-dark .mini-stat-progress i,.app.theme-night .mini-stat-progress i{background:#a98cff!important}
+.app.theme-dark .chart-grid-line,.app.theme-night .chart-grid-line{stroke:#202832!important}.app.theme-dark .chart-area,.app.theme-night .chart-area{fill:rgba(169,140,255,.10)!important}.app.theme-dark .chart-line,.app.theme-night .chart-line{stroke:#a98cff!important}.app.theme-dark .chart-point,.app.theme-night .chart-point{fill:#a98cff!important}
+.app.theme-dark .donut-chart,.app.theme-night .donut-chart{filter:saturate(.7) brightness(.75)}
+.app.theme-dark .table-head,.app.theme-night .table-head{background:#090d12!important;color:#737f8b!important}.app.theme-dark .table-row,.app.theme-night .table-row{background:#0d1117!important;color:#dce2e9!important;border-color:#1c2530!important}.app.theme-dark .table-row:hover,.app.theme-night .table-row:hover{background:#141a22!important}
+.app.theme-dark .customer-card,.app.theme-night .customer-card,.app.theme-dark .material-card,.app.theme-night .material-card,.app.theme-dark .job-card,.app.theme-night .job-card{background:#0d1117!important;border-color:#1c2530!important;color:#eef2f7!important}
+.app.theme-dark .customer-card-tags span,.app.theme-night .customer-card-tags span,.app.theme-dark .customer-insight-list>div,.app.theme-night .customer-insight-list>div,.app.theme-dark .signal-grid>div,.app.theme-night .signal-grid>div,.app.theme-dark .checklist-row>span,.app.theme-night .checklist-row>span{background:#090e14!important;border-color:#1d2731!important}
+.app.theme-dark .customer-action-card button,.app.theme-night .customer-action-card button{background:transparent!important;color:#e6eaf0!important;border-color:#1c2530!important}
+.app.theme-dark .customer-filter-tabs button,.app.theme-night .customer-filter-tabs button{background:#0d1218!important;color:#8c98a5!important;border-color:#27313d!important}.app.theme-dark .customer-filter-tabs button.active,.app.theme-night .customer-filter-tabs button.active{background:#171326!important;color:#b6a4ff!important;border-color:#6551a4!important}
+.app.theme-dark .quote-builder-form,.app.theme-night .quote-builder-form,.app.theme-dark .quote-live-preview,.app.theme-night .quote-live-preview{background:#0d1117!important;border-color:#1c2530!important}.app.theme-dark .quote-section,.app.theme-night .quote-section,.app.theme-dark .quote-builder-top,.app.theme-night .quote-builder-top{border-color:#1c2530!important}.app.theme-dark .quote-line-head,.app.theme-night .quote-line-head,.app.theme-dark .quote-line,.app.theme-night .quote-line{background:#090e14!important;border-color:#1c2530!important}.app.theme-dark .quote-line input,.app.theme-night .quote-line input,.app.theme-dark .quote-fields input,.app.theme-night .quote-fields input,.app.theme-dark .quote-fields select,.app.theme-night .quote-fields select,.app.theme-dark .quote-fields textarea,.app.theme-night .quote-fields textarea{background:#070b10!important;border-color:#27313d!important;color:#edf1f5!important}.app.theme-dark .quote-ai-panel,.app.theme-night .quote-ai-panel{background:linear-gradient(135deg,#11101b,#0b1118)!important;border-color:#302752!important}.app.theme-dark .quote-ai-chips button,.app.theme-night .quote-ai-chips button{background:#0a0f15!important;color:#cbd2db!important;border-color:#27313d!important}.app.theme-dark .quote-ai-result,.app.theme-night .quote-ai-result{background:#090e14!important;color:#dce2e9!important}.app.theme-dark .quote-save-bar,.app.theme-night .quote-save-bar{background:#090e14!important;border-color:#1c2530!important}
+.app.theme-dark .theme-option,.app.theme-night .theme-option{background:#0d1117!important;border-color:#27313d!important;color:#eef2f7!important}.app.theme-dark .theme-option.active,.app.theme-night .theme-option.active{border-color:#7560b4!important;box-shadow:0 0 0 2px rgba(169,140,255,.10)!important}
+.app.theme-dark .notification-popover,.app.theme-night .notification-popover,.app.theme-dark .admin-dropdown,.app.theme-night .admin-dropdown,.app.theme-dark .search-results,.app.theme-night .search-results{background:#0d1117!important;border-color:#1c2530!important;color:#eef2f7!important}
+.app.theme-dark .modal-backdrop,.app.theme-night .modal-backdrop,.app.theme-dark .overlay,.app.theme-night .overlay{background:rgba(0,0,0,.78)!important;backdrop-filter:blur(8px)}
+.app.theme-dark .document-note,.app.theme-night .document-note{background:#090e14!important;border-color:#1c2530!important;color:#b8c1cb!important}
+.app.theme-dark .eyebrow,.app.theme-night .eyebrow{color:#9d8bea!important}
+@media(prefers-reduced-motion:no-preference){.app.theme-dark .card,.app.theme-night .card{animation:akNightIn .35s ease both}@keyframes akNightIn{from{opacity:.72;transform:translateY(5px)}to{opacity:1;transform:none}}}
+`;
+
+const CSS = BASE_CSS + AL_KANZ_JOB_UI + AL_KANZ_ANIMATED_UI + AL_KANZ_PRO_UI + AL_KANZ_NIGHT_FINISH;
 
 
 
@@ -7496,663 +7534,169 @@ button:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
 }
 `;
 
-const FINAL_VISUAL_OVERRIDE_CSS = `
-/* ============================================================
-   AL KANZ — FINAL 2026 VISUAL SYSTEM
-   This layer intentionally overrides the older experimental
-   theme/motion rules above.  Night is a different visual language.
-============================================================ */
 
-/* ---------- semantic theme tokens ---------- */
-.app.theme-day {
-  --bg:#f4f8f7;
-  --surface:#ffffff;
-  --surface-2:#f8fbfa;
-  --surface-3:#edf5f2;
-  --text:#152728;
-  --text-2:#526669;
-  --muted:#849698;
-  --border:#dce8e5;
-  --accent:#0e7768;
-  --accent-2:#1ca58f;
-  --accent-soft:#e4f4ef;
-  --sidebar:#083f38;
-  --sidebar-2:#0d5147;
-  --shadow:0 20px 60px rgba(11,64,56,.10);
-  --glow:rgba(22,137,119,.18);
-}
-.app.theme-night {
-  color-scheme:dark;
-  --bg:#05070d;
-  --surface:#0b0f19;
-  --surface-2:#101522;
-  --surface-3:#151b2a;
-  --text:#f2f5ff;
-  --text-2:#b1b8cc;
-  --muted:#747d94;
-  --border:#252c40;
-  --accent:#67e8f9;
-  --accent-2:#a78bfa;
-  --accent-soft:#162033;
-  --sidebar:#070a12;
-  --sidebar-2:#0d1220;
-  --shadow:0 25px 80px rgba(0,0,0,.52);
-  --glow:rgba(103,232,249,.20);
-}
 
-/* ---------- global shell ---------- */
-.app.theme-day,
-.app.theme-night {
-  min-height:100vh;
+
+const AL_KANZ_LIGHT_UI = `
+.quick-nav{
+  position:relative; z-index:8; padding:7px 22px 0;
   background:var(--bg);
-  color:var(--text);
 }
-.app.theme-night::before {
-  content:"";
-  position:fixed;
-  inset:0;
-  pointer-events:none;
-  z-index:0;
-  background:
-    radial-gradient(circle at 12% 8%,rgba(103,232,249,.075),transparent 24%),
-    radial-gradient(circle at 88% 22%,rgba(167,139,250,.08),transparent 27%),
-    radial-gradient(circle at 58% 92%,rgba(59,130,246,.055),transparent 30%);
+.quick-nav-inner{
+  display:flex; align-items:center; gap:6px; min-height:38px;
+  padding:4px 6px; border:1px solid var(--border); border-radius:12px;
+  background:var(--card); box-shadow:0 3px 12px rgba(31,65,55,.035);
+  overflow-x:auto; scrollbar-width:none;
 }
-.app.theme-night .main,
-.app.theme-night .content,
-.app.theme-night .topbar {
-  background:transparent !important;
+.quick-nav-inner::-webkit-scrollbar{display:none}
+.quick-nav-label{
+  flex:0 0 auto; padding:0 7px; font-size:7px; font-weight:900;
+  letter-spacing:1.2px; color:var(--muted);
 }
+.quick-nav-button{
+  flex:0 0 auto; height:29px; padding:0 10px; border:1px solid transparent;
+  border-radius:8px; background:transparent; color:var(--text);
+  display:inline-flex; align-items:center; gap:6px; font-size:8px; font-weight:800;
+  cursor:pointer; transition:transform .16s ease,background .16s ease,border-color .16s ease,box-shadow .16s ease;
+}
+.quick-nav-button:hover{background:var(--soft); border-color:var(--border); transform:translateY(-1px)}
+.quick-nav-button.active{background:var(--green); color:#fff; box-shadow:0 4px 12px rgba(17,105,82,.16)}
+.quick-nav-button:active{transform:scale(.97)}
+.mobile-bottom-nav{display:none}
 
-/* ---------- night: deliberately NOT a darkened day theme ---------- */
-.app.theme-night .topbar {
-  border-bottom:1px solid #1c2334 !important;
-  background:rgba(5,7,13,.78) !important;
-  backdrop-filter:blur(22px);
+@media(max-width:850px){
+  .quick-nav{padding:6px 10px 0}
+  .quick-nav-inner{border-radius:10px; min-height:35px}
+  .quick-nav-label{display:none}
+  .quick-nav-button{height:27px; padding:0 9px; font-size:8px}
 }
-.app.theme-night .sidebar {
-  background:
-    linear-gradient(180deg,#060912 0%,#090d17 48%,#05070d 100%) !important;
-  border-right:1px solid #1b2233 !important;
-  box-shadow:18px 0 55px rgba(0,0,0,.30);
+@media(max-width:600px){
+  .quick-nav{padding:5px 8px 0}
+  .quick-nav-inner{gap:4px; padding:3px}
+  .quick-nav-button span{display:inline}
+  .mobile-bottom-nav{
+    position:fixed; left:8px; right:8px; bottom:8px; z-index:120;
+    display:grid; grid-template-columns:repeat(5,1fr); gap:3px;
+    padding:5px; border:1px solid var(--border); border-radius:15px;
+    background:rgba(255,255,255,.96); backdrop-filter:blur(14px);
+    box-shadow:0 10px 30px rgba(20,40,35,.14);
+  }
+  .mobile-bottom-nav button{
+    min-width:0; height:42px; border:0; border-radius:10px; background:transparent;
+    color:var(--muted); display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; font-size:6px; font-weight:800; cursor:pointer;
+  }
+  .mobile-bottom-nav button.active{background:var(--green); color:#fff}
+  .main{padding-bottom:65px}
 }
-.app.theme-night .brand-logo {
-  background:linear-gradient(135deg,#67e8f9,#a78bfa) !important;
-  color:#05070d !important;
-  box-shadow:0 0 30px rgba(103,232,249,.20);
-}
-.app.theme-night .workshop-status {
-  background:linear-gradient(135deg,#0d1726,#111827) !important;
-  border:1px solid #233149 !important;
-  color:#c9d3e8 !important;
-}
-.app.theme-night .workshop-status span {
-  background:#67e8f9 !important;
-  box-shadow:0 0 12px #67e8f9;
-}
-.app.theme-night .nav-section-title {
-  color:#5d6881 !important;
-}
-.app.theme-night .nav-item,
-.app.theme-night .sub-menu button {
-  color:#a8b1c6 !important;
-}
-.app.theme-night .nav-item:hover,
-.app.theme-night .sub-menu button:hover {
-  background:#111827 !important;
-  color:#eef5ff !important;
-}
-.app.theme-night .nav-item.selected,
-.app.theme-night .sub-menu button.sub-selected {
-  background:linear-gradient(100deg,#102b35,#17172d) !important;
-  color:#f5fbff !important;
-  border:1px solid #284451 !important;
-  box-shadow:inset 3px 0 #67e8f9,0 8px 25px rgba(0,0,0,.20);
-}
-.app.theme-night .sub-menu button.sub-selected > span {
-  background:#a78bfa !important;
-  box-shadow:0 0 9px #a78bfa;
-}
-.app.theme-night .account-card {
-  background:#0d1220 !important;
-  border:1px solid #20283b;
-}
-.app.theme-night .account-avatar {
-  background:linear-gradient(135deg,#67e8f9,#a78bfa) !important;
-  color:#05070d !important;
-}
-.app.theme-night .logout:hover {
-  background:#111827 !important;
-  color:#fff !important;
-}
+.app.theme-night .quick-nav-inner{background:#111b18;border-color:#263c35}
+.app.theme-night .quick-nav-button{color:#dcebe6}
+.app.theme-night .quick-nav-button:hover{background:#182722;border-color:#304a41}
+.app.theme-night .mobile-bottom-nav{background:rgba(15,23,21,.96);border-color:#2b4039}
+.app.theme-night .mobile-bottom-nav button{color:#9fb6ae}
+.app.theme-night .mobile-bottom-nav button.active{background:#315c4d;color:#fff}
 
-/* ---------- night surfaces: no white boxes ---------- */
-.app.theme-night .card,
-.app.theme-night .table-card,
-.app.theme-night .jobs-modern-card,
-.app.theme-night .settings-card,
-.app.theme-night .appearance-card,
-.app.theme-night .account-big-card,
-.app.theme-night .daily-expense-card,
-.app.theme-night .quotation-form-card,
-.app.theme-night .quotation-document,
-.app.theme-night .billing-transactions-card,
-.app.theme-night .report-box,
-.app.theme-night .report-chart,
-.app.theme-night .reports-chart-card {
-  background:
-    linear-gradient(145deg,rgba(16,21,34,.96),rgba(8,12,20,.98)) !important;
-  color:var(--text) !important;
-  border:1px solid #222b3e !important;
-  box-shadow:0 18px 55px rgba(0,0,0,.30);
-}
-.app.theme-night .card:hover,
-.app.theme-night .table-card:hover,
-.app.theme-night .report-box:hover {
-  border-color:#35435d !important;
-  box-shadow:0 22px 65px rgba(0,0,0,.42),0 0 0 1px rgba(103,232,249,.025);
-}
-.app.theme-night .table-head {
-  background:#090e18 !important;
-  border-color:#222b3e !important;
-  color:#66738c !important;
-}
-.app.theme-night .table-row {
-  background:transparent !important;
-  color:#dce4f2 !important;
-  border-color:#1d2638 !important;
-}
-.app.theme-night .table-row:hover {
-  background:#101726 !important;
-}
-.app.theme-night .card-header h2,
-.app.theme-night .page-title h1,
-.app.theme-night .page-heading h1,
-.app.theme-night h1,
-.app.theme-night h2,
-.app.theme-night h3,
-.app.theme-night strong {
-  color:#f3f6ff !important;
-}
-.app.theme-night .card-header p,
-.app.theme-night .page-title p,
-.app.theme-night .page-heading p,
-.app.theme-night small {
-  color:#8993aa !important;
-}
 
-/* ---------- night controls ---------- */
-.app.theme-night input,
-.app.theme-night select,
-.app.theme-night textarea,
-.app.theme-night .global-search,
-.app.theme-night .jobs-search-modern,
-.app.theme-night .jobs-status-filter,
-.app.theme-night .field input,
-.app.theme-night .field select,
-.app.theme-night .settings-form input,
-.app.theme-night .settings-form select,
-.app.theme-night .settings-form textarea {
-  background:#080d16 !important;
-  color:#eef4ff !important;
-  border-color:#273148 !important;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.02);
+:root{
+  --ak-bg:#f5f7f6;
+  --ak-surface:#ffffff;
+  --ak-surface-2:#fbfcfc;
+  --ak-ink:#17282b;
+  --ak-muted:#748488;
+  --ak-line:#e4ebea;
+  --ak-green:#16816e;
+  --ak-green-2:#0f6c5c;
+  --ak-green-soft:#e9f6f1;
+  --ak-lime:#c8ef75;
+  --ak-blue-soft:#edf5fb;
+  --ak-orange-soft:#fff4e4;
+  --ak-purple-soft:#f4effb;
+  --ak-shadow:0 4px 18px rgba(26,50,53,.055);
+  --ak-shadow-hover:0 12px 28px rgba(26,50,53,.09);
 }
-.app.theme-night input:focus,
-.app.theme-night select:focus,
-.app.theme-night textarea:focus {
-  border-color:#67e8f9 !important;
-  box-shadow:0 0 0 3px rgba(103,232,249,.09) !important;
-}
-.app.theme-night input::placeholder,
-.app.theme-night textarea::placeholder {
-  color:#5f6a81 !important;
-}
-.app.theme-night .secondary-button,
-.app.theme-night .filter-button,
-.app.theme-night .text-button {
-  background:#0e1421 !important;
-  color:#cbd4e6 !important;
-  border:1px solid #29334a !important;
-}
-.app.theme-night .secondary-button:hover,
-.app.theme-night .filter-button:hover {
-  background:#151d2d !important;
-  border-color:#42516c !important;
-  color:#fff !important;
-}
-.app.theme-night .primary-button {
-  background:linear-gradient(135deg,#67e8f9,#8b7cf6) !important;
-  color:#05070d !important;
-  box-shadow:0 12px 32px rgba(103,232,249,.15);
-}
-.app.theme-night .primary-button:hover {
-  filter:brightness(1.08);
-  box-shadow:0 15px 40px rgba(103,232,249,.24);
-}
+body{background:var(--ak-bg)!important;color:var(--ak-ink)!important;font-family:"Inter","Manrope",system-ui,sans-serif!important}
+.app{background:var(--ak-bg)!important;color:var(--ak-ink)!important}
+.sidebar{width:228px!important;background:#fff!important;color:#526468!important;border-right:1px solid var(--ak-line)!important;box-shadow:none!important}
+.brand-area{padding:22px 17px 16px!important;border-bottom:1px solid var(--ak-line)!important}
+.brand-logo{background:var(--ak-lime)!important;color:#244d43!important;border-radius:12px!important}
+.brand strong{color:#1a3033!important;font-size:14px!important}
+.brand span{color:#8a999b!important}
+.workshop-status{background:#f4faf7!important;color:#41625b!important;border:1px solid #e2eee9!important}
+.workshop-status span{background:#53b989!important;box-shadow:0 0 0 4px rgba(83,185,137,.12)!important}
+.nav-scroll{padding:19px 11px!important}
+.nav-section-title{color:#9aa7a9!important;padding-left:12px!important;font-size:8px!important}
+.nav-item{color:#5c6d70!important;border-radius:9px!important;height:39px!important;font-size:10px!important;transition:background .18s ease,color .18s ease,transform .18s ease!important}
+.nav-item:hover{background:#f1f7f5!important;color:var(--ak-green-2)!important;transform:translateX(2px)}
+.nav-item.selected{background:var(--ak-green-soft)!important;color:var(--ak-green-2)!important;box-shadow:inset 3px 0 var(--ak-green)!important;font-weight:800!important}
+.nav-item.selected svg{color:var(--ak-green)!important}
+.sub-menu button{color:#819092!important}
+.sub-menu button:hover,.sub-menu button.sub-selected{color:var(--ak-green-2)!important}
+.sub-menu button.sub-selected>span{background:var(--ak-green)!important}
+.sidebar-account{border-top:1px solid var(--ak-line)!important;padding:12px!important}
+.account-card{background:#f7faf9!important;border:1px solid var(--ak-line)!important}
+.account-card strong{color:#263b3e!important}.account-card span{color:#899799!important}
+.account-avatar{background:var(--ak-lime)!important;color:#244d43!important}
+.topbar{background:rgba(255,255,255,.96)!important;border-bottom:1px solid var(--ak-line)!important;box-shadow:0 1px 0 rgba(0,0,0,.015)!important}
+.global-search{background:#f7f9f9!important;border-color:#e2e9e8!important}
+.content{max-width:1500px!important;padding:28px 34px 55px!important}
+.page-heading,.page-title{margin-bottom:20px!important}
+.page-heading h1,.page-title h1{font-size:27px!important;color:#17282b!important}
+.primary-button{background:var(--ak-green)!important;border-radius:9px!important;box-shadow:0 5px 14px rgba(22,129,110,.14)!important}
+.primary-button:hover{background:var(--ak-green-2)!important}
+.secondary-button{border:1px solid var(--ak-line)!important;background:#fff!important;color:#42575b!important;border-radius:9px!important}
+.secondary-button:hover{background:#f5f9f8!important;border-color:#cddbd7!important}
+.quick-nav{background:transparent!important;padding:0 34px 4px!important}
+.quick-nav-inner{background:#fff!important;border:1px solid var(--ak-line)!important;box-shadow:0 2px 10px rgba(26,50,53,.035)!important;border-radius:11px!important;padding:4px!important}
+.quick-nav-button{color:#617276!important;border-radius:7px!important}.quick-nav-button:hover{background:#f2f8f6!important;color:var(--ak-green-2)!important}.quick-nav-button.active{background:var(--ak-green)!important;color:#fff!important}
+.dashboard-modern{animation:akPageIn .42s cubic-bezier(.2,.8,.2,1) both}
+.dashboard-topline{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:18px}
+.dashboard-topline h1{margin-top:7px;font-size:29px;letter-spacing:-.035em}
+.dashboard-topline p{margin-top:7px;color:var(--ak-muted);font-size:11px}
+.dashboard-primary-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.dashboard-action{height:40px!important;padding:0 13px!important;font-size:10px!important;white-space:nowrap}
+.workshop-strip{min-height:86px;border:1px solid #dce9e4;border-radius:14px;background:linear-gradient(90deg,#f4faf7,#fffaf1);display:flex;align-items:center;justify-content:space-between;padding:14px 18px;margin-bottom:15px;box-shadow:var(--ak-shadow);overflow:hidden;position:relative}
+.workshop-strip:after{content:"";position:absolute;right:-50px;top:-80px;width:220px;height:220px;border-radius:50%;border:1px solid rgba(22,129,110,.09)}
+.workshop-strip-main{display:flex;align-items:center;gap:12px;position:relative;z-index:1}.workshop-badge{width:43px;height:43px;border-radius:12px;background:var(--ak-lime);display:grid;place-items:center;color:#2b564b}.workshop-strip-main strong,.workshop-strip-main span{display:block}.workshop-strip-main strong{font-size:12px}.workshop-strip-main span{font-size:9px;color:var(--ak-muted);margin-top:3px}
+.workshop-strip-items{display:flex;gap:28px;position:relative;z-index:1}.workshop-strip-items div{padding-left:20px;border-left:1px solid #dce7e3}.workshop-strip-items small,.workshop-strip-items strong{display:block}.workshop-strip-items small{font-size:7px;color:#8b989a;font-weight:800;letter-spacing:.13em}.workshop-strip-items strong{margin-top:5px;font-size:13px}.dashboard-stats{margin-top:0!important;margin-bottom:15px!important;grid-template-columns:repeat(4,1fr)!important;gap:12px!important}
+.stat{background:#fff!important;border:1px solid var(--ak-line)!important;border-radius:13px!important;box-shadow:var(--ak-shadow)!important;min-height:99px!important;padding:16px!important;transition:transform .2s ease,box-shadow .2s ease!important}.stat:hover{transform:translateY(-2px)!important;box-shadow:var(--ak-shadow-hover)!important}.stat-icon{border-radius:10px!important}.stat strong{font-size:18px!important}.stat small{font-size:8px!important}
+.dashboard-main-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(330px,.8fr);gap:15px}.dashboard-bottom-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(330px,.8fr);gap:15px;margin-top:15px}
+.dashboard-card{border:1px solid var(--ak-line)!important;border-radius:14px!important;box-shadow:var(--ak-shadow)!important;background:#fff!important;transition:box-shadow .22s ease,transform .22s ease!important}.dashboard-card:hover{transform:translateY(-2px)!important;box-shadow:var(--ak-shadow-hover)!important}.dashboard-card .card-header{padding:17px 18px 12px!important}.dashboard-card .card-header h2{font-size:14px!important}.dashboard-card .card-header p{font-size:8px!important}
+.dashboard-table{padding:0 14px}.dashboard-table-head,.dashboard-table-row{display:grid;grid-template-columns:1.35fr 1.1fr .8fr .75fr 24px;gap:10px;align-items:center}.dashboard-table-head{padding:7px 7px;color:#99a5a7;font-size:7px;font-weight:800;letter-spacing:.12em}.dashboard-table-row{width:100%;min-height:58px;padding:8px 7px;border-top:1px solid #edf1f0;background:#fff;color:#5d6e71;text-align:left;font-size:9px;transition:background .16s ease,transform .16s ease}.dashboard-table-row:hover{background:#f8fbfa;transform:translateX(2px)}.dashboard-table-row>svg{color:#9aa6a8}.dashboard-table-row>strong{color:#263a3d;font-size:10px}.job-customer{display:flex;align-items:center;gap:8px;min-width:0}.job-customer i{width:29px;height:29px;border-radius:9px;background:#eef7f4;color:var(--ak-green);display:grid;place-items:center;font-style:normal;font-size:9px;font-weight:800;flex:none}.job-customer b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#25383b;font-size:9px}.dashboard-card-footer{display:flex;justify-content:space-between;padding:10px 18px 14px;border-top:1px solid #edf1f0}.dashboard-card-footer .text-button{font-size:9px}
+.dashboard-action-list{padding:0 12px 8px}.dashboard-action-list .quick-action{border-radius:9px!important;padding:10px 8px!important;transition:background .16s ease,transform .16s ease!important}.dashboard-action-list .quick-action:hover{background:#f5faf8!important;transform:translateX(3px)}.action-link-row{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:9px 16px 15px;border-top:1px solid #edf1f0}.action-link-row button{height:34px;border:1px solid var(--ak-line);border-radius:8px;background:#fbfcfc;color:#526568;display:flex;align-items:center;justify-content:center;gap:6px;font-size:8px;font-weight:800}.action-link-row button:hover{background:var(--ak-green-soft);color:var(--ak-green-2)}
+.activity-list{padding:0 18px 12px}.activity-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid #edf1f0}.activity-row:first-child{border-top:0}.activity-icon{width:32px;height:32px;border-radius:9px;display:grid;place-items:center}.activity-icon.income{background:#eaf7f2;color:var(--ak-green)}.activity-icon.expense{background:#fff1ef;color:#b85f55}.activity-copy{flex:1;min-width:0}.activity-copy strong,.activity-copy span{display:block}.activity-copy strong{font-size:9px;color:#273a3d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-copy span{font-size:8px;color:#96a1a3;margin-top:3px}.activity-row>strong{font-size:10px}.income{color:var(--ak-green)!important}.expense{color:#b85f55!important}
+.finance-hero{margin:0 18px;padding:14px;border-radius:11px;background:#f5faf8;border:1px solid #e0eee9}.finance-hero span,.finance-hero small{display:block;color:#7d8e91;font-size:8px}.finance-hero strong{display:block;margin-top:5px;font-size:22px;letter-spacing:-.02em}.mini-progress{height:6px;background:#dfece7;border-radius:99px;overflow:hidden;margin:11px 0 6px}.mini-progress i{display:block;height:100%;background:var(--ak-green);border-radius:99px;transition:width .7s cubic-bezier(.2,.8,.2,1)}.finance-lines{padding:7px 18px 10px}.finance-lines div{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #edf1f0}.finance-lines span{font-size:9px;color:#748386}.finance-lines strong{font-size:10px}.orange-text{color:#b9792f!important}.finance-view-button{margin:0 18px 16px;width:calc(100% - 36px);height:35px;border:1px solid #dce8e4;background:#fff;border-radius:8px;color:var(--ak-green-2);display:flex;align-items:center;justify-content:center;gap:6px;font-size:9px;font-weight:800}.finance-view-button:hover{background:var(--ak-green-soft)}
+/* Fix the unstyled summary that previously appeared as raw text. */
+.billing-summary-list{padding:4px 20px 15px}.billing-summary-list>div{display:flex!important;align-items:center;justify-content:space-between!important;padding:9px 0!important;border-bottom:1px solid #edf1f0!important;color:#748386!important;font-size:9px!important}.billing-summary-list>div strong{font-size:10px!important;color:#263a3d!important}
+@keyframes akPageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media(max-width:1050px){.dashboard-main-grid,.dashboard-bottom-grid{grid-template-columns:1fr}.dashboard-primary-actions{justify-content:flex-start}.dashboard-topline{align-items:flex-start;flex-direction:column}.workshop-strip-items{gap:16px}}
+@media(max-width:760px){.sidebar{width:218px!important}.content{padding:20px 14px 70px!important}.quick-nav{padding:0 14px 4px!important}.dashboard-stats{grid-template-columns:repeat(2,1fr)!important}.workshop-strip{align-items:flex-start;flex-direction:column;gap:14px}.workshop-strip-items{width:100%;justify-content:space-between}.workshop-strip-items div{padding-left:10px}.dashboard-table{overflow-x:auto}.dashboard-table-head,.dashboard-table-row{min-width:650px}.dashboard-primary-actions{width:100%}.dashboard-action{flex:1}.action-link-row{grid-template-columns:1fr}.topbar{min-height:62px!important}}
+@media(max-width:480px){.dashboard-stats{grid-template-columns:1fr!important}.dashboard-action{flex:auto}.workshop-strip-items{gap:9px}.workshop-strip-items strong{font-size:11px}}
 
-/* ---------- night dashboard: distinct "command center" ---------- */
-.app.theme-night .page-heading::after {
-  width:320px;
-  height:180px;
-  background:
-    radial-gradient(circle at 25% 40%,rgba(103,232,249,.17),transparent 35%),
-    radial-gradient(circle at 80% 50%,rgba(167,139,250,.14),transparent 38%);
-}
-.app.theme-night .hero {
-  background:
-    radial-gradient(circle at 85% 50%,rgba(103,232,249,.15),transparent 22%),
-    radial-gradient(circle at 70% 100%,rgba(167,139,250,.13),transparent 28%),
-    linear-gradient(135deg,#0b1120,#111827 55%,#0a0e18) !important;
-  border:1px solid #27334a !important;
-  box-shadow:0 30px 80px rgba(0,0,0,.45),inset 0 1px rgba(255,255,255,.035);
-}
-.app.theme-night .hero::after {
-  opacity:.35;
-}
-.app.theme-night .hero-ring {
-  border-color:rgba(103,232,249,.20) !important;
-}
-.app.theme-night .hero-sofa {
-  background:linear-gradient(135deg,#67e8f9,#a78bfa) !important;
-  color:#05070d !important;
-  box-shadow:0 0 55px rgba(103,232,249,.20);
-}
-.app.theme-night .floating-icon {
-  background:#0b1220 !important;
-  border:1px solid #30405b !important;
-  color:#67e8f9 !important;
-  box-shadow:0 10px 35px rgba(0,0,0,.38);
-}
-.app.theme-night .stat-card,
-.app.theme-night .stat {
-  background:linear-gradient(145deg,#0d1422,#090d16) !important;
-  border:1px solid #232e43 !important;
-  color:#fff !important;
-}
-.app.theme-night .stat-icon {
-  background:#111b2c !important;
-  color:#67e8f9 !important;
-}
-.app.theme-night .large-progress {
-  background:#1a2334 !important;
-}
-.app.theme-night .large-progress span {
-  background:linear-gradient(90deg,#67e8f9,#a78bfa) !important;
-}
-
-/* ---------- fixed preview/print modals: fixes the "eye goes upward" bug ---------- */
-.modal-backdrop,
-.modal-overlay {
-  position:fixed !important;
-  inset:0 !important;
-  z-index:1000 !important;
-  width:100vw !important;
-  height:100dvh !important;
-  min-height:100vh !important;
-  display:grid !important;
-  place-items:center !important;
-  padding:24px !important;
-  overflow:auto !important;
-  box-sizing:border-box !important;
-  background:rgba(7,14,15,.58) !important;
-  backdrop-filter:blur(14px) saturate(120%) !important;
-  -webkit-backdrop-filter:blur(14px) saturate(120%) !important;
-}
-.modal-backdrop > .card,
-.modal-overlay > .card,
-.modal-backdrop > .modal,
-.modal-overlay > .modal {
-  position:relative !important;
-  top:auto !important;
-  left:auto !important;
-  margin:0 auto !important;
-  max-height:calc(100dvh - 48px) !important;
-  overflow:auto !important;
-}
-.entity-preview-modal,
-.print-options-modal {
-  width:min(620px,calc(100vw - 48px)) !important;
-  max-height:calc(100dvh - 48px) !important;
-  overflow:auto !important;
-}
-.modal-backdrop .quotation-modal-document {
-  width:min(860px,calc(100vw - 48px)) !important;
-}
-.modal-backdrop .job-drawer-close {
-  z-index:3;
-}
-.app.theme-night .modal-backdrop,
-.app.theme-night .modal-overlay {
-  background:rgba(0,0,0,.72) !important;
-}
-.app.theme-night .entity-preview-modal,
-.app.theme-night .print-options-modal,
-.app.theme-night .quotation-modal-document,
-.app.theme-night .modal {
-  background:linear-gradient(145deg,#111827,#080c14) !important;
-  border:1px solid #2b3851 !important;
-  color:#f2f5ff !important;
-  box-shadow:0 35px 100px rgba(0,0,0,.70),0 0 70px rgba(103,232,249,.035);
-}
-.app.theme-night .entity-preview-grid > div {
-  background:#0b111d !important;
-  border-color:#263148 !important;
-}
-.app.theme-night .entity-preview-grid strong {
-  color:#edf4ff !important;
-}
-.app.theme-night .entity-preview-grid small {
-  color:#6f7b93 !important;
-}
-
-/* ---------- eye buttons ---------- */
-.row-action {
-  position:relative;
-  z-index:2;
-  width:34px !important;
-  height:34px !important;
-  min-width:34px !important;
-  display:grid !important;
-  place-items:center !important;
-  cursor:pointer !important;
-  border-radius:10px !important;
-  border:1px solid var(--border) !important;
-  background:var(--surface-2) !important;
-  color:var(--accent) !important;
-}
-.row-action:hover {
-  transform:translateY(-2px) scale(1.05);
-}
-.app.theme-night .row-action {
-  background:#0b1220 !important;
-  border-color:#2c3850 !important;
-  color:#67e8f9 !important;
-  box-shadow:0 6px 18px rgba(0,0,0,.28);
-}
-.app.theme-night .row-action:hover {
-  border-color:#67e8f9 !important;
-  box-shadow:0 0 22px rgba(103,232,249,.16);
-}
-
-/* ---------- quotation: invoice-like professional document ---------- */
-.app.theme-night .quotation-document,
-.app.theme-night .invoice-preview,
-.app.theme-night .quotation-preview {
-  background:#f8fafc !important;
-  color:#15202b !important;
-}
-.app.theme-night .quotation-document h2,
-.app.theme-night .quotation-document strong {
-  color:#15202b !important;
-}
-.app.theme-night .quotation-ai-box {
-  background:linear-gradient(135deg,#0d1726,#111827) !important;
-  border-color:#293852 !important;
-}
-.app.theme-night .quotation-ai-box strong {
-  color:#f3f6ff !important;
-}
-.app.theme-night .quotation-ai-box p {
-  color:#aab5ca !important;
-}
-
-/* ---------- billing: replace awkward printer animation with a calm flow ---------- */
-.billing-machine {
-  position:relative;
-}
-.billing-machine.is-printing {
-  animation:billingPulse 1.4s ease-in-out infinite;
-}
-.billing-machine.is-printing .billing-machine-screen {
-  box-shadow:0 0 0 1px rgba(14,119,104,.22),0 24px 70px rgba(14,119,104,.12);
-}
-.billing-flow {
-  overflow:hidden;
-}
-.billing-flow-line i {
-  animation:billingDot 1.4s ease-in-out infinite !important;
-}
-.billing-flow-line i:nth-child(2) { animation-delay:.18s !important; }
-.billing-flow-line i:nth-child(3) { animation-delay:.36s !important; }
-.billing-machine-receipt .printed-paper {
-  animation:none !important;
-}
-.billing-machine.is-printing .printed-paper {
-  animation:paperSettle .9s cubic-bezier(.2,.8,.2,1) both !important;
-}
-@keyframes billingPulse {
-  0%,100% { transform:translateY(0); }
-  50% { transform:translateY(-2px); }
-}
-@keyframes billingDot {
-  0%,100% { opacity:.25; transform:scale(.8); }
-  50% { opacity:1; transform:scale(1.12); }
-}
-@keyframes paperSettle {
-  0% { opacity:.4; transform:translateY(-14px); }
-  65% { opacity:1; transform:translateY(3px); }
-  100% { opacity:1; transform:translateY(0); }
-}
-.app.theme-night .billing-machine {
-  background:linear-gradient(145deg,#080d17,#0d1422) !important;
-  border-color:#26334b !important;
-  box-shadow:0 30px 80px rgba(0,0,0,.42);
-}
-.app.theme-night .billing-machine-screen,
-.app.theme-night .billing-machine-receipt {
-  background:linear-gradient(145deg,#0e1522,#090e18) !important;
-  border-color:#26334b !important;
-}
-.app.theme-night .billing-machine-screen::after {
-  background:linear-gradient(90deg,transparent,#67e8f9,transparent) !important;
-}
-
-/* ---------- search / popovers ---------- */
-.app.theme-night .global-search-results,
-.app.theme-night .ai-panel,
-.app.theme-night .admin-dropdown,
-.app.theme-night .notification-popover {
-  background:#0b111d !important;
-  border:1px solid #28334a !important;
-  color:#f2f5ff !important;
-  box-shadow:0 30px 90px rgba(0,0,0,.65);
-}
-.app.theme-night .search-result:hover,
-.app.theme-night .ai-suggestions button:hover,
-.app.theme-night .admin-dropdown > button:hover,
-.app.theme-night .notification-footer:hover {
-  background:#111a2a !important;
-}
-.app.theme-night .search-result-icon,
-.app.theme-night .ai-suggestion-number {
-  background:#122337 !important;
-  color:#67e8f9 !important;
-}
-.app.theme-night .ai-suggestions button {
-  background:#0d1421 !important;
-  border-color:#263249 !important;
-  color:#edf4ff !important;
-}
-
-/* ---------- settings: day/night controls are equal ---------- */
-.theme-options-two {
-  grid-template-columns:repeat(2,minmax(0,1fr)) !important;
-  gap:14px !important;
-}
-.theme-options-two .theme-option {
-  min-height:120px !important;
-  width:100% !important;
-}
-.app.theme-night .theme-option {
-  background:#0b111d !important;
-  color:#f2f5ff !important;
-  border-color:#27334a !important;
-}
-.app.theme-night .theme-option.active {
-  border-color:#67e8f9 !important;
-  box-shadow:0 0 0 1px rgba(103,232,249,.25),0 15px 40px rgba(0,0,0,.32);
-}
-.theme-preview-day {
-  background:linear-gradient(135deg,#fff 0 50%,#dceee9 50%) !important;
-}
-.theme-preview-night {
-  background:
-    radial-gradient(circle at 70% 30%,#67e8f9 0 8%,transparent 9%),
-    linear-gradient(135deg,#05070d,#111827 55%,#312e81) !important;
-  position:relative;
-  overflow:hidden;
-}
-.theme-preview-night::after {
-  content:"✦";
-  position:absolute;
-  right:10px;
-  top:7px;
-  color:#a78bfa;
-  font-size:10px;
-}
-
-/* ---------- mobile: compact icon + small text sidebar ---------- */
-@media(max-width:850px) {
-  .sidebar {
-    width:224px !important;
-    max-width:82vw !important;
-    z-index:1100 !important;
-  }
-  .sidebar-overlay {
-    position:fixed !important;
-    inset:0 !important;
-    z-index:1090 !important;
-    display:block !important;
-    border:0 !important;
-    background:rgba(0,0,0,.46) !important;
-    backdrop-filter:blur(4px);
-  }
-  .mobile-close {
-    display:grid !important;
-    place-items:center;
-  }
-  .nav-item {
-    min-height:36px !important;
-    font-size:9px !important;
-    gap:8px !important;
-  }
-  .nav-item svg {
-    width:16px !important;
-    height:16px !important;
-  }
-  .sub-menu button {
-    min-height:28px !important;
-    font-size:8px !important;
-  }
-  .main {
-    width:100% !important;
-    margin-left:0 !important;
-  }
-  .topbar {
-    position:sticky !important;
-    z-index:60 !important;
-  }
-  .global-search {
-    min-width:0 !important;
-  }
-}
-@media(max-width:600px) {
-  .sidebar {
-    width:210px !important;
-  }
-  .nav-section-title {
-    font-size:6px !important;
-  }
-  .nav-item {
-    min-height:31px !important;
-    padding:0 8px !important;
-    font-size:8.5px !important;
-  }
-  .nav-item svg {
-    width:14px !important;
-    height:14px !important;
-  }
-  .sub-menu {
-    padding-left:28px !important;
-  }
-  .sub-menu button {
-    min-height:25px !important;
-    font-size:7.5px !important;
-  }
-  .entity-preview-modal,
-  .print-options-modal,
-  .modal-backdrop .quotation-modal-document {
-    width:calc(100vw - 24px) !important;
-    max-height:calc(100dvh - 24px) !important;
-  }
-  .modal-backdrop,
-  .modal-overlay {
-    padding:12px !important;
-  }
-  .theme-options-two {
-    grid-template-columns:1fr !important;
-  }
-}
-@media(max-width:480px) {
-  .topbar-right {
-    gap:5px !important;
-  }
-  .global-search {
-    height:34px !important;
-  }
-  .global-search input {
-    font-size:9px !important;
-  }
-}
-
-/* ---------- print is actually printable ---------- */
-@media print {
-  body {
-    background:#fff !important;
-  }
-  .sidebar,
-  .topbar,
-  .ai-panel,
-  .modal-backdrop > .modal-close,
-  .modal-backdrop .document-actions,
-  .billing-action-strip,
-  .report-toolbar,
-  .notification-popover,
-  .admin-dropdown {
-    display:none !important;
-  }
-  .main {
-    width:100% !important;
-    margin:0 !important;
-  }
-  .content {
-    padding:0 !important;
-  }
-  .card,
-  .table-card,
-  .quotation-document {
-    box-shadow:none !important;
-  }
-  .modal-backdrop {
-    position:static !important;
-    display:block !important;
-    background:#fff !important;
-    padding:0 !important;
-  }
-}
-
-/* ---------- accessibility ---------- */
-@media(prefers-reduced-motion:reduce) {
-  .app.theme-night *,
-  .app.theme-day * {
-    animation-duration:.001ms !important;
-    animation-iteration-count:1 !important;
-    scroll-behavior:auto !important;
-  }
-}
 `;
 
-const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX + AL_KANZ_FULL_MOTION_CSS + FINAL_VISUAL_OVERRIDE_CSS;
+
+const AL_KANZ_UPGRADE_UI = `
+/* ============================================================
+   AL KANZ UPHOLSTERY — VISUAL UPGRADE
+============================================================ */
+.theme-toggle-button{height:38px;padding:0 11px;border:1px solid var(--border);border-radius:11px;background:var(--soft);color:var(--text);display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;transition:.25s;box-shadow:0 6px 18px rgba(0,0,0,.04)}
+.theme-toggle-button:hover{transform:translateY(-2px);border-color:var(--green);box-shadow:0 10px 24px rgba(23,111,98,.12)}
+.theme-toggle-button span{font-size:10px}
+.dashboard-fire{position:relative}
+.dashboard-hero{position:relative;overflow:hidden;border-radius:20px;padding:25px 26px;margin-bottom:18px;background:linear-gradient(135deg,var(--white),var(--soft));border:1px solid var(--border);box-shadow:var(--shadow)}
+.dashboard-hero:after{content:"";position:absolute;width:260px;height:260px;right:-90px;top:-120px;border-radius:50%;background:radial-gradient(circle,rgba(101,208,176,.16),transparent 68%);pointer-events:none}
+.dashboard-hero-copy{position:relative;z-index:1}.dashboard-hero h1{font-family:"Manrope",sans-serif;font-size:31px;letter-spacing:-.04em;margin:6px 0 6px;color:var(--text)}
+.dashboard-hero p{color:var(--text-2);font-size:13px;max-width:690px}.hero-actions{position:relative;z-index:2}.hero-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.hero-pills span{padding:7px 10px;border:1px solid var(--border);border-radius:999px;background:var(--soft);color:var(--text-2);font-size:10px;font-weight:800}.live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#55c997;box-shadow:0 0 0 4px rgba(85,201,151,.12);margin-right:5px}
+.glow-button{box-shadow:0 10px 26px rgba(23,111,98,.2)}
+.dashboard-command-grid{display:grid;grid-template-columns:2fr repeat(3,1fr);gap:14px;margin-bottom:16px}.command-card{min-height:178px;padding:19px;position:relative;overflow:hidden}.command-card-main{background:linear-gradient(135deg,var(--green-dark),var(--green));color:#fff;border-color:transparent}.command-card-main .command-card-glow{position:absolute;width:220px;height:220px;border-radius:50%;right:-70px;top:-95px;background:rgba(255,255,255,.12)}.command-label,.mini-stat-head{display:flex;justify-content:space-between;align-items:center;font-size:9px;font-weight:900;letter-spacing:.16em}.command-label b{font-size:8px;letter-spacing:.08em;padding:5px 7px;border-radius:999px;background:rgba(255,255,255,.14)}.command-main-row{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1;margin-top:16px}.command-main-row small{display:block;font-size:9px;opacity:.72;letter-spacing:.08em}.command-main-row strong{display:block;font:800 27px "Manrope",sans-serif;margin:3px 0}.command-main-row span{font-size:10px;opacity:.8}.ring-progress{width:86px;height:86px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(#fff var(--progress),rgba(255,255,255,.15) 0);position:relative}.ring-progress:after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--green)}.ring-progress div{position:relative;z-index:1;text-align:center}.ring-progress strong{font-size:17px;margin:0}.ring-progress small{display:block;font-size:8px}.command-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:15px;position:relative;z-index:1}.command-metrics div{border-top:1px solid rgba(255,255,255,.18);padding-top:9px}.command-metrics span,.command-metrics strong{display:block}.command-metrics span{font-size:8px;opacity:.65}.command-metrics strong{font-size:11px;margin-top:3px}.mini-stat-card{transition:.25s}.mini-stat-card:hover{transform:translateY(-3px)}.mini-stat-card strong{display:block;font:800 27px "Manrope",sans-serif;margin-top:19px}.mini-stat-card p{font-size:10px;color:var(--muted);margin-top:2px}.mini-stat-head{color:var(--muted)}.mini-icon{width:30px;height:30px;border-radius:9px;background:var(--green-light);color:var(--green);display:grid;place-items:center}.mini-icon.purple{background:var(--purple-light);color:var(--purple)}.mini-icon.orange{background:var(--orange-light);color:var(--orange)}.mini-stat-card button{display:flex;align-items:center;gap:4px;background:transparent;color:var(--green);font-size:10px;font-weight:800;margin-top:13px}.tiny-bars{height:30px;display:flex;align-items:end;gap:4px;margin-top:10px}.tiny-bars i{flex:1;border-radius:4px 4px 1px 1px;background:var(--green);opacity:.75}.mini-stat-progress{height:7px;background:var(--soft);border-radius:99px;overflow:hidden;margin-top:18px}.mini-stat-progress i{display:block;height:100%;background:linear-gradient(90deg,var(--purple),var(--green));border-radius:inherit}.stock-severity{display:flex;gap:5px;margin-top:19px}.stock-severity span{height:7px;flex:1;border-radius:999px;background:var(--orange)}.stock-severity span.empty{background:var(--soft)}
+.dashboard-analytics-grid{display:grid;grid-template-columns:1.65fr 1fr;gap:16px;margin-bottom:16px}.analytics-card{padding:20px}.chart-legend{display:flex;justify-content:space-between;align-items:center;margin:6px 0 5px;color:var(--muted);font-size:10px}.chart-legend span{display:flex;align-items:center;gap:6px}.legend-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block}.chart-legend strong{font-size:13px;color:var(--text)}.line-chart-wrap{height:240px}.line-chart{width:100%;height:210px;overflow:visible}.chart-grid-line{stroke:var(--border);stroke-width:1}.chart-area{fill:url(#akArea)}.chart-line{fill:none;stroke:var(--green);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.chart-point{fill:var(--white);stroke:var(--green);stroke-width:3}.chart-x-labels{display:grid;grid-template-columns:repeat(7,1fr);font-size:9px;color:var(--muted);text-align:center}.donut-layout{display:flex;align-items:center;justify-content:center;gap:30px;min-height:235px}.donut-chart{width:176px;height:176px;border-radius:50%;display:grid;place-items:center;position:relative;flex:0 0 176px}.donut-chart:after{content:"";position:absolute;inset:28px;border-radius:50%;background:var(--white)}.donut-chart div{position:relative;z-index:1;text-align:center}.donut-chart strong{display:block;font:800 23px "Manrope",sans-serif}.donut-chart span{font-size:9px;color:var(--muted)}.donut-legend{width:150px}.donut-legend>div{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);font-size:10px}.donut-legend span{display:flex;align-items:center;gap:7px;color:var(--text-2)}.legend-swatch{width:7px;height:7px;border-radius:50%;display:inline-block}.swatch-0{background:#176f62}.swatch-1{background:#4d86c7}.swatch-2{background:#9a68c4}.swatch-3{background:#d59a4b}
+.dashboard-bottom-grid{display:grid;grid-template-columns:1.65fr 1fr;gap:16px}.dashboard-insight-card{margin-top:16px;padding:19px 21px;display:grid;grid-template-columns:1.1fr 1.7fr auto;gap:22px;align-items:center}.insight-copy h2{font:800 18px "Manrope",sans-serif;margin:4px 0}.insight-copy p{font-size:10px;color:var(--muted)}.insight-bars{display:grid;gap:9px}.insight-bars>div>div{display:flex;justify-content:space-between;font-size:9px;margin-bottom:4px}.insight-bar{height:6px;background:var(--soft);border-radius:99px;display:block;overflow:hidden}.insight-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#8fdcc5);border-radius:inherit}.quotation-ai-pro{border:1px solid var(--border);border-radius:15px;padding:14px;background:linear-gradient(135deg,var(--soft),var(--white));box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}.quotation-ai-head{display:flex;align-items:center;gap:10px}.quotation-ai-head>div:nth-child(2){flex:1}.quotation-ai-head strong,.quotation-ai-head small{display:block}.quotation-ai-head small{font-size:10px;color:var(--muted);margin-top:2px}.ai-orb{width:37px;height:37px;border-radius:12px;background:linear-gradient(135deg,var(--green),var(--purple));color:#fff;display:grid;place-items:center;box-shadow:0 8px 20px rgba(117,87,164,.18)}.quotation-ai-suggestions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.quotation-ai-suggestions button{padding:10px;border:1px solid var(--border);background:var(--white);border-radius:10px;text-align:left;color:var(--text);transition:.2s}.quotation-ai-suggestions button:hover{transform:translateY(-2px);border-color:var(--green)}.quotation-ai-suggestions span,.quotation-ai-suggestions small{display:block}.quotation-ai-suggestions span{font-size:10px;font-weight:900}.quotation-ai-suggestions small{font-size:9px;color:var(--muted);line-height:1.45;margin-top:4px}.quotation-ai-result{display:flex;gap:8px;margin-top:10px;padding:10px;border-radius:10px;background:var(--green-light);color:var(--text-2);font-size:10px;line-height:1.5}.quotation-ai-result p{margin:0}
+.app.theme-dark .global-search,.app.theme-night .global-search,.app.theme-dark .jobs-search-modern,.app.theme-night .jobs-search-modern,.app.theme-dark .jobs-status-filter,.app.theme-night .jobs-status-filter,.app.theme-dark .field input,.app.theme-night .field input,.app.theme-dark .field select,.app.theme-night .field select,.app.theme-dark textarea,.app.theme-night textarea,.app.theme-dark .settings-form input,.app.theme-night .settings-form input{background:#172127;color:var(--text);border-color:var(--border)}
+.app.theme-dark .content,.app.theme-night .content{background:transparent}.app.theme-dark .page-title h1,.app.theme-night .page-title h1,.app.theme-dark .card h2,.app.theme-night .card h2{color:var(--text)}.app.theme-dark .table-row:hover,.app.theme-night .table-row:hover{background:#18252b}.app.theme-dark .theme-toggle-button,.app.theme-night .theme-toggle-button{background:#172127;color:#f1f6f7}.app.theme-dark .quick-nav,.app.theme-night .quick-nav{background:#101a20;border-color:#26353d}.app.theme-dark .quick-nav-button,.app.theme-night .quick-nav-button{color:#a9bbc0}.app.theme-dark .quick-nav-button.active,.app.theme-night .quick-nav-button.active{background:#16372f;color:#73d7b7}
+@media(max-width:1050px){.dashboard-command-grid{grid-template-columns:1fr 1fr}.command-card-main{grid-column:1/-1}.dashboard-analytics-grid,.dashboard-bottom-grid{grid-template-columns:1fr}.dashboard-insight-card{grid-template-columns:1fr}.quotation-ai-suggestions{grid-template-columns:1fr}}
+@media(max-width:700px){.dashboard-hero{padding:18px}.dashboard-hero h1{font-size:24px}.hero-actions{margin-top:10px;flex-wrap:wrap}.dashboard-command-grid{grid-template-columns:1fr}.command-card-main{grid-column:auto}.donut-layout{flex-direction:column;gap:15px}.donut-legend{width:100%}.dashboard-stat-strip{grid-template-columns:1fr 1fr}.quotation-ai-head{align-items:flex-start;flex-wrap:wrap}.quotation-ai-head .primary-button{width:100%}.theme-toggle-button span{display:none}}
+`;
+
+const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX + AL_KANZ_FULL_MOTION_CSS + AL_KANZ_LIGHT_UI + AL_KANZ_UPGRADE_UI;
 
 export default App;
