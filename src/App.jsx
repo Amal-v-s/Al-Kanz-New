@@ -252,15 +252,10 @@ import {
   Download,
   SlidersHorizontal,
   RefreshCw,
-  PieChart,
-  Target,
-  Activity,
-  CalendarClock,
-  Tags,
-  Boxes,
-  FileCheck2,
-  TrendingDown,
-  MessageSquareText,
+  MessageCircle,
+  Smartphone,
+  Mail,
+  Copy,
 } from "lucide-react";
 
 /* ============================================================
@@ -579,12 +574,16 @@ const mapJob = (row) => ({
 });
 
 const mapCustomer = (row) => ({
+  ...row,
   id: row.id,
   name: row.name,
   phone: row.phone || "",
+  whatsapp: row.whatsapp || row.phone || "",
+  email: row.email || "",
   location: row.location || "Dubai",
   address: row.address || "",
-  jobs: Number(row.jobs_count || 0),
+  notes: row.notes || "",
+  jobs: Number(row.jobs_count || row.jobs || 0),
   outstanding: Number(row.outstanding || 0),
 });
 
@@ -598,7 +597,8 @@ const mapMaterial = (row) => ({
 });
 
 const mapSupplier = (row) => ({
-  id: row.id, name: row.name, phone: row.phone || "", material: row.material || "", balance: Number(row.balance || 0)
+  ...row,
+  id: row.id, name: row.name, phone: row.phone || "", email: row.email || "", address: row.address || "", location: row.location || "Dubai", notes: row.notes || "", material: row.material || "", balance: Number(row.balance || 0)
 });
 
 const mapStaff = (row) => ({
@@ -840,11 +840,11 @@ const netCash = totalPaid - totalExpenses;
   };
 
   const addCustomer = async (customer) => {
-    const newCustomer = { ...customer, id: Date.now(), jobs: 0, outstanding: 0 };
+    const newCustomer = { ...customer, id: Date.now(), jobs: 0, outstanding: 0, whatsapp: customer.whatsapp || customer.phone || "", email: customer.email || "", address: customer.address || "", notes: customer.notes || "" };
     setCustomers(prev => [newCustomer, ...prev]);
     setModal(null);
     if (hasSupabase) {
-      const { error } = await supabase.from("customers").insert({ name: customer.name, phone: customer.phone, location: customer.location || "Dubai", jobs_count: 0, outstanding: 0 });
+      const { error } = await supabase.from("customers").insert({ name: customer.name, phone: customer.phone, whatsapp: customer.whatsapp || customer.phone || "", email: customer.email || "", location: customer.location || "Dubai", address: customer.address || "", notes: customer.notes || "", jobs_count: 0, outstanding: 0 });
       if (error) { console.error("Customer save failed:", error); alert("Customer saved locally, but cloud sync failed."); }
     }
     auditLocal("Created customer", "customer", newCustomer.id, { name: customer.name });
@@ -864,6 +864,10 @@ const netCash = totalPaid - totalExpenses;
         const { error } = await supabase.from("suppliers").insert({
           name: supplier.name,
           phone: supplier.phone,
+          email: supplier.email || "",
+          address: supplier.address || "",
+          location: supplier.location || "Dubai",
+          notes: supplier.notes || "",
           material: supplier.material,
           balance: Number(supplier.balance || 0),
         });
@@ -1140,8 +1144,6 @@ const netCash = totalPaid - totalExpenses;
                 )}
               </div>
 
-              <button type="button" className="theme-toggle-button" onClick={() => setTheme(theme === "night" ? "day" : "night")} title={theme === "night" ? "Switch to Day theme" : "Switch to Night theme"} aria-label="Toggle theme">{theme === "night" ? "☀" : "☾"}<span>{theme === "night" ? "Day" : "Night"}</span></button>
-
               <button type="button" className={`ai-help-button ${aiOpen ? "active" : ""}`} onClick={() => { setAiOpen(v => !v); setAdminMenuOpen(false); setNotificationOpen(false); }} title="AI Help">
                 <Sparkles size={16}/> <span>AI Help</span>
               </button>
@@ -1289,6 +1291,9 @@ const netCash = totalPaid - totalExpenses;
               outstanding={outstanding}
               expenses={expenses}
               quotations={quotations}
+              jobs={jobs}
+              customers={customers}
+              materials={materials}
               navigate={(target) => { setAiOpen(false); navigate(target); }}
               close={() => setAiOpen(false)}
             />
@@ -1323,6 +1328,9 @@ const netCash = totalPaid - totalExpenses;
             {page === "Customers" && (
               <CustomersPage
                 customers={customers}
+                jobs={jobs}
+                payments={payments}
+                navigate={navigate}
                 setModal={setModal}
                 setEntityPreview={setEntityPreview}
               />
@@ -1337,7 +1345,7 @@ const netCash = totalPaid - totalExpenses;
             )}
 
             {page === "Suppliers" && (
-              <SuppliersPage suppliers={suppliers} setSuppliers={setSuppliers} setModal={setModal} setEntityPreview={setEntityPreview} />
+              <SuppliersPage suppliers={suppliers} jobs={jobs} expenses={expenses} transactions={transactions} setSuppliers={setSuppliers} setModal={setModal} setEntityPreview={setEntityPreview} />
             )}
 
             {page === "Staff" && (
@@ -1366,6 +1374,10 @@ const netCash = totalPaid - totalExpenses;
                 outstanding={outstanding}
                 totalPaid={totalPaid}
                 recordPayment={recordPayment}
+                customers={customers}
+                setJobs={setJobs}
+                setPayments={setPayments}
+                setTransactions={setTransactions}
               />
             )}
 
@@ -1488,144 +1500,48 @@ function Dashboard({
   const invoiceCount = safeJobs.length;
   const quotationCount = safeQuotations.length;
   const collectionRate = totalSales > 0 ? Math.min(100, (totalPaid / totalSales) * 100) : 0;
-  const activeJobs = safeJobs.filter(j => !["Completed", "Delivered"].includes(j.status));
-  const completedJobs = safeJobs.filter(j => ["Completed", "Delivered"].includes(j.status));
-  const recentJobs = safeJobs.slice(0, 6);
-  const lowStock = 3;
-
-  const trendBase = [42, 56, 49, 68, 61, 78, 72];
-  const trend = trendBase.map((v, i) => ({
-    label: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i],
-    value: Math.round((totalSales || 0) * (v / 420)),
-  }));
-
-  const statusCounts = [
-    { label: "Active", value: activeJobs.length },
-    { label: "Completed", value: completedJobs.length },
-    { label: "Quoted", value: quotationCount },
-    { label: "Pending", value: Math.max(0, safeJobs.length - activeJobs.length - completedJobs.length) },
-  ];
-  const maxStatus = Math.max(1, ...statusCounts.map(x => x.value));
-  const totalStatus = Math.max(1, statusCounts.reduce((a, b) => a + b.value, 0));
+  const recentJobs = safeJobs.slice(0, 5);
 
   return (
-    <div className="dashboard-modern dashboard-fire">
-      <div className="dashboard-topline dashboard-hero">
-        <div className="dashboard-hero-copy">
+    <div className="dashboard-modern">
+      <div className="dashboard-topline">
+        <div>
           <span className="eyebrow">AL KANZ UPHOLSTERY · DUBAI WORKSHOP</span>
-          <h1>Workshop command center.</h1>
-          <p>Jobs, upholstery work, customers, materials and money — all in one view.</p>
-          <div className="hero-pills">
-            <span><i className="live-dot" /> Workshop live</span>
-            <span>{activeJobs.length} active jobs</span>
-            <span>{lowStock} stock alerts</span>
-          </div>
+          <h1>Good evening, Al Kanz.</h1>
+          <p>Everything you need to run today's upholstery work, billing and collections.</p>
         </div>
-        <div className="dashboard-primary-actions hero-actions">
+        <div className="dashboard-primary-actions">
           <button className="secondary-button dashboard-action" onClick={() => navigate("Customers")}><Users size={16} /> Customers</button>
           <button className="secondary-button dashboard-action" onClick={() => navigate("New Quotation")}><FileText size={16} /> New Quotation</button>
-          <button className="primary-button dashboard-action glow-button" onClick={() => navigate("Billing")}><Receipt size={16} /> Create Bill</button>
+          <button className="primary-button dashboard-action" onClick={() => navigate("Billing")}><Receipt size={16} /> Create Bill</button>
         </div>
       </div>
 
-      <div className="dashboard-command-grid">
-        <section className="card command-card command-card-main">
-          <div className="command-card-glow" />
-          <div className="command-label"><span>WORKSHOP PULSE</span><b>LIVE</b></div>
-          <div className="command-main-row">
-            <div>
-              <small>COLLECTED THIS CYCLE</small>
-              <strong>{money(totalPaid)}</strong>
-              <span>{Math.round(collectionRate)}% collection efficiency</span>
-            </div>
-            <div className="ring-progress" style={{"--progress": `${collectionRate * 3.6}deg`}}>
-              <div><strong>{Math.round(collectionRate)}%</strong><small>paid</small></div>
-            </div>
+      <section className="workshop-strip">
+        <div className="workshop-strip-main">
+          <div className="workshop-badge"><Sofa size={20} /></div>
+          <div>
+            <strong>Workshop pulse</strong>
+            <span>Stay on top of jobs, materials and payments.</span>
           </div>
-          <div className="command-metrics">
-            <div><span>Outstanding</span><strong>{money(outstanding)}</strong></div>
-            <div><span>Expenses</span><strong>{money(totalExpenses)}</strong></div>
-            <div><span>Jobs</span><strong>{safeJobs.length}</strong></div>
-          </div>
-        </section>
+        </div>
+        <div className="workshop-strip-items">
+          <div><small>ACTIVE JOBS</small><strong>{safeJobs.filter(j => !["Completed", "Delivered"].includes(j.status)).length}</strong></div>
+          <div><small>COLLECTION RATE</small><strong>{Math.round(collectionRate)}%</strong></div>
+          <div><small>OUTSTANDING</small><strong>{money(outstanding)}</strong></div>
+        </div>
+      </section>
 
-        <section className="card command-card mini-stat-card">
-          <div className="mini-stat-head"><span>JOB FLOW</span><span className="mini-icon"><Sofa size={16}/></span></div>
-          <strong>{activeJobs.length}</strong>
-          <p>Active upholstery jobs</p>
-          <div className="tiny-bars">
-            {[35, 52, 42, 72, 58, 86, 66].map((h, i) => <i key={i} style={{height:`${h}%`}} />)}
-          </div>
-          <button onClick={() => navigate("Active Jobs")}>Open jobs <ArrowUpRight size={13}/></button>
-        </section>
-
-        <section className="card command-card mini-stat-card">
-          <div className="mini-stat-head"><span>QUOTATIONS</span><span className="mini-icon purple"><FileText size={16}/></span></div>
-          <strong>{quotationCount}</strong>
-          <p>Saved customer estimates</p>
-          <div className="mini-stat-progress"><i style={{width:`${Math.min(100, quotationCount * 8 + 12)}%`}} /></div>
-          <button onClick={() => navigate("All Quotations")}>View quotes <ArrowUpRight size={13}/></button>
-        </section>
-
-        <section className="card command-card mini-stat-card">
-          <div className="mini-stat-head"><span>STOCK WATCH</span><span className="mini-icon orange"><Package size={16}/></span></div>
-          <strong>{lowStock}</strong>
-          <p>Items need attention</p>
-          <div className="stock-severity"><span /><span /><span /><span className="empty" /><span className="empty" /></div>
-          <button onClick={() => navigate("Materials")}>Open materials <ArrowUpRight size={13}/></button>
-        </section>
-      </div>
-
-      <div className="stats dashboard-stats dashboard-stat-strip">
-        <Stat icon={Wrench} label="Active jobs" value={activeJobs.length} note="currently in workshop" color="green" />
+      <div className="stats dashboard-stats">
+        <Stat icon={Wrench} label="Active jobs" value={safeJobs.length} note="workshop records" color="green" />
         <Stat icon={FileText} label="Invoices" value={invoiceCount} note="billing records" color="blue" />
         <Stat icon={CircleDollarSign} label="Outstanding" value={money(outstanding)} note="pending collection" color="orange" />
         <Stat icon={Banknote} label="Collected" value={money(totalPaid)} note="payments received" color="purple" />
       </div>
 
-      <div className="dashboard-analytics-grid">
-        <section className="card analytics-card sales-chart-card">
-          <CardHeader eyebrow="FINANCE TREND" title="Collection performance" subtitle="A visual view of the current billing momentum." action="Open reports" onAction={() => navigate("Reports")} />
-          <div className="chart-legend"><span><i className="legend-dot"/>Collection trend</span><strong>{money(totalPaid)}</strong></div>
-          <div className="line-chart-wrap" aria-label="Collection trend graph">
-            <svg className="line-chart" viewBox="0 0 760 260" preserveAspectRatio="none" role="img">
-              <defs>
-                <linearGradient id="akArea" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopOpacity=".28"/><stop offset="100%" stopOpacity="0"/></linearGradient>
-              </defs>
-              {[35, 85, 135, 185, 235].map(y => <line key={y} x1="0" x2="760" y1={y} y2={y} className="chart-grid-line" />)}
-              <polygon points={`0,235 ${trend.map((p,i)=>`${i*126.6},${235-p.value/Math.max(1,totalSales)*185}`).join(" ")} 760,235`} className="chart-area" />
-              <polyline points={trend.map((p,i)=>`${i*126.6},${235-p.value/Math.max(1,totalSales)*185}`).join(" ")} className="chart-line" />
-              {trend.map((p,i)=><circle key={p.label} cx={i*126.6} cy={235-p.value/Math.max(1,totalSales)*185} r="5" className="chart-point" />)}
-            </svg>
-            <div className="chart-x-labels">{trend.map(p => <span key={p.label}>{p.label}</span>)}</div>
-          </div>
-        </section>
-
-        <section className="card analytics-card status-chart-card">
-          <CardHeader eyebrow="WORKSHOP MIX" title="Job distribution" subtitle="Where your current workload sits." />
-          <div className="donut-layout">
-            <div className="donut-chart" style={{background:`conic-gradient(#176f62 0 ${statusCounts[0].value/totalStatus*100}%, #4d86c7 ${statusCounts[0].value/totalStatus*100}% ${(statusCounts[0].value+statusCounts[1].value)/totalStatus*100}%, #9a68c4 ${(statusCounts[0].value+statusCounts[1].value)/totalStatus*100}% ${(statusCounts[0].value+statusCounts[1].value+statusCounts[2].value)/totalStatus*100}%, #d59a4b ${(statusCounts[0].value+statusCounts[1].value+statusCounts[2].value)/totalStatus*100}% 100%)`}}>
-              <div><strong>{safeJobs.length}</strong><span>records</span></div>
-            </div>
-            <div className="donut-legend">{statusCounts.map((x,i)=><div key={x.label}><span><i className={`legend-swatch swatch-${i}`}/>{x.label}</span><strong>{x.value}</strong></div>)}</div>
-          </div>
-        </section>
-      </div>
-
-      <div className="dashboard-insight-grid">
-        <section className="card dashboard-insight-card"><CardHeader eyebrow="TODAY AT A GLANCE" title="Workshop checklist" subtitle="Small actions that keep the workshop moving." />
-          <div className="checklist-row"><span className="check-ok"><CheckCircle2 size={15}/></span><div><b>Collections reviewed</b><small>Keep outstanding balances visible</small></div><strong>{money(outstanding)}</strong></div>
-          <div className="checklist-row"><span><Clock3 size={15}/></span><div><b>Active jobs</b><small>Jobs still moving through production</small></div><strong>{activeJobs.length}</strong></div>
-          <div className="checklist-row"><span><Package size={15}/></span><div><b>Stock attention</b><small>Review materials before purchasing</small></div><strong>{lowStock}</strong></div>
-        </section>
-        <section className="card dashboard-insight-card"><CardHeader eyebrow="BUSINESS SIGNALS" title="Growth & risk" subtitle="Fast indicators from the current records." />
-          <div className="signal-grid"><div><span>Collection</span><b>{Math.round(collectionRate)}%</b><i style={{width:`${collectionRate}%`}}></i></div><div><span>Active workload</span><b>{activeJobs.length}</b><i style={{width:`${Math.min(100,activeJobs.length*12)}%`}}></i></div><div><span>Quotes</span><b>{quotationCount}</b><i style={{width:`${Math.min(100,quotationCount*10+8)}%`}}></i></div><div><span>Completed</span><b>{completedJobs.length}</b><i style={{width:`${Math.min(100,completedJobs.length*12)}%`}}></i></div></div>
-        </section>
-      </div>
-
-      <div className="dashboard-bottom-grid">
+      <div className="dashboard-main-grid">
         <section className="card dashboard-card bills-card">
-          <CardHeader eyebrow="WORKSHOP BILLING" title="Recent jobs & bills" subtitle="Turn a specific upholstery job into a bill when it is ready." action="Open billing" onAction={() => navigate("Billing")} />
+          <CardHeader eyebrow="WORKSHOP BILLING" title="Recent jobs & bills" subtitle="Your latest upholstery work at a glance." action="Open billing" onAction={() => navigate("Billing")} />
           <div className="dashboard-table">
             <div className="dashboard-table-head"><span>JOB / CUSTOMER</span><span>ITEM</span><span>STATUS</span><span>AMOUNT</span><span></span></div>
             {recentJobs.map((job, index) => (
@@ -1646,9 +1562,9 @@ function Dashboard({
         </section>
 
         <section className="card dashboard-card actions-card">
-          <CardHeader eyebrow="QUICK ACCESS" title="Workshop shortcuts" subtitle="Fast actions for the things you do every day." />
+          <CardHeader eyebrow="QUICK ACCESS" title="What do you want to do?" subtitle="Common workshop actions." />
           <div className="dashboard-action-list">
-            <QuickAction icon={ReceiptText} title="Create Bill" subtitle="Bill one particular upholstery item" onClick={() => navigate("Billing")} />
+            <QuickAction icon={ReceiptText} title="Create Bill" subtitle="Bill a particular upholstery item" onClick={() => navigate("Billing")} />
             <QuickAction icon={Plus} title="New Job" subtitle="Add a customer upholstery job" onClick={() => setModal("job")} />
             <QuickAction icon={Users} title="Add Customer" subtitle="Save a new customer profile" onClick={() => setModal("customer")} />
             <QuickAction icon={Package} title="Add Material" subtitle="Update workshop inventory" onClick={() => setModal("material")} />
@@ -1660,11 +1576,34 @@ function Dashboard({
         </section>
       </div>
 
-      <section className="card dashboard-insight-card">
-        <div className="insight-copy"><span className="eyebrow">WORKSHOP INSIGHTS</span><h2>Today at Al Kanz</h2><p>Keep the next action visible instead of hunting through menus.</p></div>
-        <div className="insight-bars">{statusCounts.map((x,i)=><div key={x.label}><div><span>{x.label}</span><b>{x.value}</b></div><span className="insight-bar"><i style={{width:`${x.value/maxStatus*100}%`}} /></span></div>)}</div>
-        <button className="primary-button" onClick={() => navigate("Reports")}>View full analytics <ArrowUpRight size={15}/></button>
-      </section>
+      <div className="dashboard-bottom-grid">
+        <section className="card dashboard-card activity-card">
+          <CardHeader eyebrow="RECENT ACTIVITY" title="Latest transactions" subtitle="Payments and expenses recorded in the workshop." action="View all" onAction={() => navigate("Transactions")} />
+          <div className="activity-list">
+            {safeTransactions.slice(0, 5).map((tx, index) => {
+              const expense = String(tx.transaction_type || "").toLowerCase() === "expense";
+              return <div className="activity-row" key={tx.id || index}>
+                <div className={`activity-icon ${expense ? "expense" : "income"}`}>{expense ? <ArrowLeftRight size={15} /> : <ArrowUpRight size={15} />}</div>
+                <div className="activity-copy"><strong>{tx.description || tx.transaction_type || "Transaction"}</strong><span>{tx.account || "Workshop account"}</span></div>
+                <strong className={expense ? "expense" : "income"}>{expense ? "-" : "+"}{money(tx.amount || 0)}</strong>
+              </div>;
+            })}
+            {!safeTransactions.length && <EmptyState icon={Receipt} title="No transactions yet" text="Recorded payments and expenses will appear here." />}
+          </div>
+        </section>
+
+        <section className="card dashboard-card finance-card">
+          <CardHeader eyebrow="FINANCE SNAPSHOT" title="Money at a glance" subtitle="Current workshop position." />
+          <div className="finance-hero"><span>Total collected</span><strong>{money(totalPaid)}</strong><div className="mini-progress"><i style={{ width: `${collectionRate}%` }} /></div><small>{Math.round(collectionRate)}% of billed sales collected</small></div>
+          <div className="finance-lines">
+            <div><span>Invoices</span><strong>{invoiceCount}</strong></div>
+            <div><span>Quotations</span><strong>{quotationCount}</strong></div>
+            <div><span>Outstanding</span><strong className="orange-text">{money(outstanding)}</strong></div>
+            <div><span>Expenses</span><strong>{money(totalExpenses)}</strong></div>
+          </div>
+          <button className="finance-view-button" onClick={() => navigate("Reports")}>View financial reports <ChevronRight size={15} /></button>
+        </section>
+      </div>
     </div>
   );
 }
@@ -2296,55 +2235,55 @@ function JobDetailsDrawer({
    CUSTOMERS
 ============================================================ */
 
-function CustomersPage({ customers = [], setModal, setEntityPreview }) {
+function CustomersPage({ customers = [], jobs = [], payments = [], setModal, navigate, setEntityPreview }) {
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [query, setQuery] = useState("");
   const safeCustomers = Array.isArray(customers) ? customers : [];
-  const totalOutstanding = safeCustomers.reduce((sum, c) => sum + Number(c.outstanding || 0), 0);
-  const totalJobs = safeCustomers.reduce((sum, c) => sum + Number(c.jobs || 0), 0);
-  const activeCustomers = safeCustomers.filter(c => Number(c.jobs || 0) > 0).length;
-  const topCustomers = [...safeCustomers].sort((a,b) => Number(b.jobs||0)-Number(a.jobs||0)).slice(0,5);
-  const [filter, setFilter] = useState("All");
-  const visible = safeCustomers.filter(c => filter === "All" ? true : filter === "Outstanding" ? Number(c.outstanding||0) > 0 : Number(c.jobs||0) > 0);
-
-  return (
-    <>
-      <PageTitle eyebrow="WORKSHOP · CRM" title="Customers" subtitle="A complete customer workspace for contacts, jobs, balances and follow-ups." button="Add Customer" onClick={() => setModal("customer")} />
-      <div className="customer-command-grid">
-        <div className="customer-command-card"><span><Users size={17}/> TOTAL CUSTOMERS</span><strong>{safeCustomers.length}</strong><small>Profiles in your workshop</small></div>
-        <div className="customer-command-card"><span><Sofa size={17}/> TOTAL JOBS</span><strong>{totalJobs}</strong><small>Jobs linked to customers</small></div>
-        <div className="customer-command-card warning"><span><CircleDollarSign size={17}/> RECEIVABLES</span><strong>{money(totalOutstanding)}</strong><small>Customer balances pending</small></div>
-        <div className="customer-command-card success"><span><Activity size={17}/> ACTIVE CLIENTS</span><strong>{activeCustomers}</strong><small>Customers with workshop activity</small></div>
-      </div>
-      <div className="customer-workspace-grid">
-        <section className="card customer-insight-card">
-          <CardHeader eyebrow="CUSTOMER INSIGHTS" title="Relationship overview" subtitle="Quick signals from your customer base." />
-          <div className="customer-insight-list">
-            <div><span><Target size={15}/> Customers with balances</span><strong>{safeCustomers.filter(c=>Number(c.outstanding||0)>0).length}</strong></div>
-            <div><span><FileCheck2 size={15}/> Returning customers</span><strong>{safeCustomers.filter(c=>Number(c.jobs||0)>1).length}</strong></div>
-            <div><span><CalendarClock size={15}/> Follow-up opportunities</span><strong>{safeCustomers.filter(c=>Number(c.outstanding||0)>0 || Number(c.jobs||0)>1).length}</strong></div>
-          </div>
-          <div className="customer-ranking"><div className="customer-ranking-title"><span>TOP BY JOB COUNT</span><small>Current records</small></div>{topCustomers.map((c,i)=><div className="customer-ranking-row" key={c.id || i}><b>{i+1}</b><span>{c.name}</span><i style={{width:`${Math.max(10, Math.min(100,(Number(c.jobs||0)/Math.max(1,Number(topCustomers[0]?.jobs||1)))*100))}%`}}></i><strong>{c.jobs||0}</strong></div>)}</div>
-        </section>
-        <section className="card customer-action-card">
-          <CardHeader eyebrow="CRM SHORTCUTS" title="Customer actions" subtitle="Keep customer work moving without opening multiple screens." />
-          <button onClick={()=>setModal("customer")}><Users size={18}/><span><b>New customer</b><small>Create a complete profile</small></span><ArrowUpRight size={15}/></button>
-          <button onClick={()=>setModal("customer")}><MessageSquareText size={18}/><span><b>Follow-up note</b><small>Prepare a customer reminder</small></span><ArrowUpRight size={15}/></button>
-          <button onClick={()=>setModal("customer")}><ReceiptText size={18}/><span><b>Customer billing</b><small>Review jobs and balances</small></span><ArrowUpRight size={15}/></button>
-        </section>
-      </div>
-      <div className="customer-filter-tabs">{["All","Active","Outstanding"].map(x=><button type="button" key={x} className={filter===x?"active":""} onClick={()=>setFilter(x)}>{x}<span>{x==="All"?safeCustomers.length:x==="Active"?activeCustomers:safeCustomers.filter(c=>Number(c.outstanding||0)>0).length}</span></button>)}</div>
-      <div className="customer-grid">
-        {visible.map((customer) => (
-          <div className="customer-card customer-card-pro" key={customer.id}>
-            <div className="customer-top"><div className="customer-avatar">{String(customer.name||"C").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><div className="customer-health"><span className={Number(customer.outstanding||0)>0?"needs-attention":"healthy"}></span>{Number(customer.outstanding||0)>0?"Balance due":"Good standing"}</div><div className="card-actions"><button type="button" className="row-action" onClick={()=>setEntityPreview?.({type:"Customer",...customer})}><Eye size={16}/></button><button type="button" className="dots" onClick={()=>setEntityPreview?.({type:"Customer",...customer})}><MoreHorizontal size={17}/></button></div></div>
-            <h3>{customer.name}</h3><div className="customer-detail"><Phone size={14}/>{customer.phone}</div><div className="customer-detail"><MapPin size={14}/>{customer.location}</div>
-            <div className="customer-card-tags"><span><Sofa size={12}/> {customer.jobs||0} jobs</span><span><CircleDollarSign size={12}/> {money(customer.outstanding||0)}</span></div>
-            <div className="customer-card-footer"><button onClick={()=>setEntityPreview?.({type:"Customer",...customer})}>View profile <ArrowUpRight size={14}/></button><button onClick={()=>setModal("customer")}><MoreHorizontal size={15}/></button></div>
-          </div>
-        ))}
-        {!visible.length && <EmptyState icon={Users} title="No customers match" text="Try another filter or add a new customer." />}
-      </div>
-    </>
-  );
+  const safeJobs = Array.isArray(jobs) ? jobs : [];
+  const safePayments = Array.isArray(payments) ? payments : [];
+  const filtered = safeCustomers.filter((c) => {
+    const q = query.trim().toLowerCase();
+    return !q || [c.name, c.phone, c.email, c.location, c.address].some(v => String(v || "").toLowerCase().includes(q));
+  });
+  const profile = (customer) => {
+    const customerJobs = safeJobs.filter(j => String(j.customerId || j.customer_id || j.customer || "").toLowerCase() === String(customer.id || customer.name).toLowerCase() || String(j.customer || "").toLowerCase() === String(customer.name || "").toLowerCase());
+    const jobIds = new Set(customerJobs.map(j => String(j.id || j.jobId)));
+    const customerPayments = safePayments.filter(p => String(p.customer_id || p.customerId || p.customer || "").toLowerCase() === String(customer.id || customer.name).toLowerCase() || jobIds.has(String(p.job_id || p.jobId)) || String(p.customer || "").toLowerCase() === String(customer.name || "").toLowerCase());
+    const purchases = customerJobs.reduce((sum, j) => sum + Number(j.amount || 0), 0);
+    const paid = customerPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0) || customerJobs.reduce((sum, j) => sum + Number(j.paid || 0), 0);
+    return { customerJobs, customerPayments, purchases, paid, balance: Math.max(0, purchases - paid) };
+  };
+  return <>
+    <PageTitle eyebrow="WORKSHOP · CRM" title="Customers" subtitle="Complete customer profiles, purchase history, jobs, invoices and balances." button="Add Customer" onClick={() => setModal("customer")} />
+    <div className="crm-toolbar">
+      <div className="crm-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search name, phone, email or location..."/><span>{filtered.length} customers</span></div>
+      <div className="crm-toolbar-stats"><span><strong>{safeCustomers.length}</strong> total</span><span><strong>{safeCustomers.filter(c=>Number(c.outstanding||0)>0).length}</strong> with balance</span></div>
+    </div>
+    <div className="customer-grid customer-grid-premium">
+      {filtered.map((customer) => {
+        const p = profile(customer);
+        const initials = String(customer.name || "C").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
+        return <div className="customer-card customer-card-premium" key={customer.id}>
+          <div className="customer-top"><div className="customer-avatar customer-avatar-large">{initials}</div><div className="customer-tier">{p.customerJobs.length > 3 ? "LOYAL" : p.customerJobs.length ? "ACTIVE" : "NEW"}</div><button type="button" className="dots" onClick={()=>setSelectedCustomer(customer)}><MoreHorizontal size={17}/></button></div>
+          <h3>{customer.name}</h3>
+          <div className="customer-contact-line"><Phone size={14}/><span>{customer.phone || "No phone"}</span></div>
+          <div className="customer-contact-line"><Mail size={14}/><span>{customer.email || "No email"}</span></div>
+          <div className="customer-contact-line"><MapPin size={14}/><span>{customer.address || customer.location || "Dubai, UAE"}</span></div>
+          <div className="customer-finance-grid"><div><small>TOTAL PURCHASES</small><strong>{money(p.purchases || customer.totalPurchases || 0)}</strong></div><div><small>PAID</small><strong className="income">{money(p.paid)}</strong></div><div><small>PENDING</small><strong className={p.balance>0?"orange-text":"income"}>{money(p.balance)}</strong></div></div>
+          <div className="customer-card-actions"><button type="button" className="secondary-button" onClick={()=>setSelectedCustomer(customer)}><Eye size={14}/> Full profile</button><button type="button" className="primary-button" onClick={()=>navigate?.("Billing")}><Receipt size={14}/> Create bill</button></div>
+        </div>;
+      })}
+      {!filtered.length && <EmptyState icon={Users} title="No customers found" text="Try another search or add a new customer."/>}
+    </div>
+    {selectedCustomer && (() => { const p=profile(selectedCustomer); return <div className="modal-backdrop crm-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setSelectedCustomer(null)}><div className="card crm-profile-modal">
+      <button className="modal-close" onClick={()=>setSelectedCustomer(null)}><X size={17}/></button>
+      <div className="crm-profile-head"><div className="customer-avatar customer-avatar-xl">{String(selectedCustomer.name||"C").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase()}</div><div><span className="eyebrow">CUSTOMER PROFILE</span><h2>{selectedCustomer.name}</h2><p>{selectedCustomer.location || "Dubai, UAE"} · Customer #{selectedCustomer.id}</p></div></div>
+      <div className="crm-contact-grid"><div><small>PHONE</small><strong>{selectedCustomer.phone || "—"}</strong></div><div><small>WHATSAPP</small><strong>{selectedCustomer.whatsapp || selectedCustomer.phone || "—"}</strong></div><div><small>EMAIL</small><strong>{selectedCustomer.email || "—"}</strong></div><div><small>ADDRESS</small><strong>{selectedCustomer.address || selectedCustomer.location || "—"}</strong></div></div>
+      <div className="crm-kpis"><div><small>PREVIOUS PURCHASES</small><strong>{money(p.purchases)}</strong></div><div><small>JOBS</small><strong>{p.customerJobs.length}</strong></div><div><small>PAYMENTS</small><strong>{money(p.paid)}</strong></div><div className={p.balance>0?"is-warning":""}><small>PENDING BALANCE</small><strong>{money(p.balance)}</strong></div></div>
+      <div className="crm-history-grid"><div><div className="section-mini-head"><strong>Previous jobs & purchases</strong><span>{p.customerJobs.length} records</span></div><div className="crm-history-list">{p.customerJobs.slice(0,8).map(j=><div key={j.id}><span><b>{j.id}</b><small>{j.item || j.work || "Upholstery work"} · {j.date || "—"}</small></span><strong>{money(j.amount)}</strong></div>)}{!p.customerJobs.length&&<EmptyState icon={ClipboardList} title="No previous jobs" text="New work for this customer will appear here."/>}</div></div><div><div className="section-mini-head"><strong>Payment history</strong><span>{p.customerPayments.length} records</span></div><div className="crm-history-list">{p.customerPayments.slice(0,8).map((pay,i)=><div key={pay.id||i}><span><b>{pay.payment_method||"Cash"}</b><small>{pay.paid_at ? new Date(pay.paid_at).toLocaleDateString("en-AE") : "—"}</small></span><strong className="income">+{money(pay.amount)}</strong></div>)}{!p.customerPayments.length&&<EmptyState icon={CreditCard} title="No payments yet" text="Payments recorded against this customer will appear here."/>}</div></div></div>
+      <div className="document-actions"><button className="secondary-button" onClick={()=>navigate?.("Billing")}><Receipt size={15}/> Billing</button><button className="primary-button" onClick={()=>setSelectedCustomer(null)}>Done</button></div>
+    </div></div>; })()}
+  </>;
 }
 
 /* ============================================================
@@ -2415,43 +2354,28 @@ function MaterialsPage({
    SUPPLIERS
 ============================================================ */
 
-function SuppliersPage({ suppliers, setSuppliers, setModal, setEntityPreview }) {
-  return (
-    <>
-      <PageTitle
-        eyebrow="WORKSHOP"
-        title="Suppliers"
-        subtitle="Manage material suppliers and balances."
-        button="Add Supplier"
-        onClick={() => setModal("supplier")}
-      />
-
-      <div className="table-card">
-        <div className="table-head supplier-head">
-          <span>SUPPLIER</span>
-          <span>PHONE</span>
-          <span>MATERIAL</span>
-          <span>BALANCE</span>
-          <span />
-        </div>
-
-        {suppliers.map((supplier) => (
-          <div className="table-row supplier-row" key={supplier.id}>
-            <div>
-              <strong>{supplier.name}</strong>
-              <small>Supplier #{supplier.id}</small>
-            </div>
-            <span>{supplier.phone}</span>
-            <span>{supplier.material}</span>
-            <strong>{money(supplier.balance)}</strong>
-            <button className="row-action" type="button" onClick={() => setEntityPreview?.({ type: "Supplier", ...supplier })} title="View supplier">
-              <Eye size={16} />
-            </button>
-          </div>
-        ))}
-      </div>
-    </>
-  );
+function SuppliersPage({ suppliers = [], jobs = [], expenses = [], transactions = [], setSuppliers, setModal, setEntityPreview }) {
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [query, setQuery] = useState("");
+  const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
+  const safeExpenses = Array.isArray(expenses) ? expenses : [];
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+  const detail = (supplier) => {
+    const name = String(supplier.name || "").toLowerCase();
+    const material = String(supplier.material || "").toLowerCase();
+    const purchaseRows = safeExpenses.filter(x => [x.supplier,x.description,x.category].some(v => String(v||"").toLowerCase().includes(name) || (material && String(v||"").toLowerCase().includes(material))));
+    const paymentRows = safeTransactions.filter(x => String(x.description||"").toLowerCase().includes(name) && /payment|supplier|purchase|paid/.test(String(x.description||"").toLowerCase()));
+    const purchases = purchaseRows.reduce((sum,x)=>sum+Number(x.amount||0),0);
+    const payments = paymentRows.reduce((sum,x)=>sum+Number(x.amount||0),0);
+    return {purchaseRows,paymentRows,purchases,payments,balance:Math.max(0,Number(supplier.balance||0))};
+  };
+  const filtered=safeSuppliers.filter(s=>{const q=query.toLowerCase().trim();return !q||[s.name,s.phone,s.material,s.email,s.location,s.address].some(v=>String(v||"").toLowerCase().includes(q));});
+  return <>
+    <PageTitle eyebrow="PROCUREMENT · CRM" title="Suppliers" subtitle="Supplier contacts, materials supplied, purchases, payments and outstanding balances." button="Add Supplier" onClick={()=>setModal("supplier")}/>
+    <div className="crm-toolbar"><div className="crm-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search supplier, material, phone or email..."/><span>{filtered.length} suppliers</span></div><div className="crm-toolbar-stats"><span><strong>{safeSuppliers.length}</strong> suppliers</span><span><strong>{money(safeSuppliers.reduce((a,b)=>a+Number(b.balance||0),0))}</strong> payable</span></div></div>
+    <div className="supplier-premium-grid">{filtered.map(s=>{const d=detail(s);return <div className="supplier-premium-card" key={s.id}><div className="supplier-card-head"><div className="supplier-logo"><Truck size={20}/></div><span className="supplier-status">{d.balance>0?"PAYABLE":"CLEAR"}</span><button className="dots" onClick={()=>setSelectedSupplier(s)}><MoreHorizontal size={17}/></button></div><h3>{s.name}</h3><p>{s.material || "Workshop materials"}</p><div className="supplier-contact-stack"><span><Phone size={13}/>{s.phone || "No phone"}</span><span><Mail size={13}/>{s.email || "No email"}</span><span><MapPin size={13}/>{s.address || s.location || "Dubai, UAE"}</span></div><div className="supplier-finance"><div><small>PURCHASES</small><strong>{money(d.purchases)}</strong></div><div><small>PAYMENTS</small><strong className="income">{money(d.payments)}</strong></div><div><small>BALANCE</small><strong className={d.balance>0?"orange-text":"income"}>{money(d.balance)}</strong></div></div><button className="secondary-button full-width" onClick={()=>setSelectedSupplier(s)}><Eye size={14}/> View supplier history</button></div>})}{!filtered.length&&<EmptyState icon={Truck} title="No suppliers found" text="Try another search or add a supplier."/>}</div>
+    {selectedSupplier&&(()=>{const d=detail(selectedSupplier);return <div className="modal-backdrop crm-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setSelectedSupplier(null)}><div className="card crm-profile-modal supplier-profile-modal"><button className="modal-close" onClick={()=>setSelectedSupplier(null)}><X size={17}/></button><div className="crm-profile-head"><div className="supplier-logo supplier-logo-xl"><Truck size={24}/></div><div><span className="eyebrow">SUPPLIER PROFILE</span><h2>{selectedSupplier.name}</h2><p>{selectedSupplier.material || "Workshop supplier"} · Supplier #{selectedSupplier.id}</p></div></div><div className="crm-contact-grid"><div><small>PHONE</small><strong>{selectedSupplier.phone||"—"}</strong></div><div><small>EMAIL</small><strong>{selectedSupplier.email||"—"}</strong></div><div><small>ADDRESS</small><strong>{selectedSupplier.address||selectedSupplier.location||"—"}</strong></div><div><small>MATERIALS SUPPLIED</small><strong>{selectedSupplier.material||"—"}</strong></div></div><div className="crm-kpis"><div><small>TOTAL PURCHASES</small><strong>{money(d.purchases)}</strong></div><div><small>PAYMENTS MADE</small><strong>{money(d.payments)}</strong></div><div><small>OPEN BALANCE</small><strong className={d.balance>0?"orange-text":"income"}>{money(d.balance)}</strong></div><div><small>STATUS</small><strong>{d.balance>0?"Payment due":"Clear"}</strong></div></div><div className="crm-history-grid"><div><div className="section-mini-head"><strong>Purchase history</strong><span>{d.purchaseRows.length} records</span></div><div className="crm-history-list">{d.purchaseRows.slice(0,8).map((x,i)=><div key={x.id||i}><span><b>{x.category||"Material purchase"}</b><small>{x.description||x.supplier||"Workshop purchase"}</small></span><strong>{money(x.amount)}</strong></div>)}{!d.purchaseRows.length&&<EmptyState icon={Package} title="No purchase records" text="Supplier purchases will appear here when recorded."/>}</div></div><div><div className="section-mini-head"><strong>Payment history</strong><span>{d.paymentRows.length} records</span></div><div className="crm-history-list">{d.paymentRows.slice(0,8).map((x,i)=><div key={x.id||i}><span><b>{x.account||"Payment"}</b><small>{x.transaction_date?new Date(x.transaction_date).toLocaleDateString("en-AE"):"—"}</small></span><strong className="income">-{money(x.amount)}</strong></div>)}{!d.paymentRows.length&&<EmptyState icon={CreditCard} title="No supplier payments" text="Supplier payments will appear here when recorded."/>}</div></div></div><div className="document-actions"><button className="secondary-button" onClick={()=>setSelectedSupplier(null)}>Close</button></div></div></div>})()}
+  </>;
 }
 
 /* ============================================================
@@ -2493,7 +2417,7 @@ function StaffPage({ staff, setStaff, setModal, setEntityPreview }) {
    BILLING
 ============================================================ */
 
-function BillingPage({ page, jobs, payments = [], transactions = [], outstanding, totalPaid, recordPayment }) {
+function BillingPage({ page, jobs, payments = [], transactions = [], outstanding, totalPaid, recordPayment, customers = [], setJobs, setPayments, setTransactions }) {
   // Defensive normalization: Appwrite/localStorage can briefly return null or a non-array
   // while data is loading. The billing UI must still render instead of becoming blank.
   const safeJobs = Array.isArray(jobs) ? jobs : [];
@@ -2514,16 +2438,172 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
   const [payment, setPayment] = useState("");
   const [billPrinting, setBillPrinting] = useState(false);
   const [billRun, setBillRun] = useState(0);
+  const [showBillBuilder, setShowBillBuilder] = useState(false);
+  const [postPrintBill, setPostPrintBill] = useState(null);
+  const [billForm, setBillForm] = useState({
+    customerId: "",
+    customer: "",
+    phone: "",
+    whatsapp: "",
+    email: "",
+    address: "",
+    item: "",
+    description: "",
+    quantity: "1",
+    unitPrice: "",
+    discount: "0",
+    vat: "5",
+    paid: "0",
+    paymentMethod: "Cash",
+  });
+
   const collectedPercent = invoices.reduce((a, b) => a + b.amount, 0) > 0
     ? Math.min(100, (totalPaid / invoices.reduce((a, b) => a + b.amount, 0)) * 100)
     : 0;
 
-  const startBillPrint = () => {
-    setBillPrinting(false);
-    setBillRun((n) => n + 1);
-    requestAnimationFrame(() => setBillPrinting(true));
-    window.setTimeout(() => setBillPrinting(false), 4200);
+  const resetBillForm = () => setBillForm({
+    customerId: "", customer: "", phone: "", whatsapp: "", email: "", address: "",
+    item: "", description: "", quantity: "1", unitPrice: "", discount: "0",
+    vat: "5", paid: "0", paymentMethod: "Cash",
+  });
+
+  const openBillBuilder = () => {
+    resetBillForm();
+    setShowBillBuilder(true);
   };
+
+  const selectBillCustomer = (id) => {
+    const c = customers.find((item) => String(item.id) === String(id));
+    if (!c) {
+      setBillForm((f) => ({ ...f, customerId: "", customer: "" }));
+      return;
+    }
+    setBillForm((f) => ({
+      ...f,
+      customerId: String(c.id),
+      customer: c.name || c.company || "",
+      phone: c.phone || "",
+      whatsapp: c.whatsapp || c.phone || "",
+      email: c.email || "",
+      address: c.address || c.location || "",
+    }));
+  };
+
+  const subtotal = Math.max(0, Number(billForm.quantity || 0) * Number(billForm.unitPrice || 0));
+  const discountAmount = Math.min(subtotal, Math.max(0, Number(billForm.discount || 0)));
+  const taxable = Math.max(0, subtotal - discountAmount);
+  const vatAmount = taxable * (Number(billForm.vat || 0) / 100);
+  const billTotal = taxable + vatAmount;
+  const paidNow = Math.min(billTotal, Math.max(0, Number(billForm.paid || 0)));
+  const billBalance = Math.max(0, billTotal - paidNow);
+
+  const billMessage = (bill) => [
+    "AL KANZ UPHOLSTERY",
+    `Invoice: ${bill.id}`,
+    `Customer: ${bill.customer}`,
+    `Item: ${bill.item}`,
+    `Total: ${money(bill.total)}`,
+    `Paid: ${money(bill.paid)}`,
+    `Balance: ${money(bill.balance)}`,
+    "Thank you for choosing Al Kanz Upholstery.",
+  ].join("\n");
+
+  const shareBill = async (bill, channel) => {
+    const message = billMessage(bill);
+    const phone = String(bill.whatsapp || bill.phone || "").replace(/\D/g, "");
+    try { await navigator.clipboard?.writeText(message); } catch {}
+    if (channel === "whatsapp") {
+      if (!phone) return alert("No WhatsApp number saved for this customer.");
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    } else if (channel === "botim") {
+      window.open("https://botim.me/", "_blank", "noopener,noreferrer");
+      alert("Bill message copied. Paste it into the customer's Botim chat.");
+    } else if (channel === "phone") {
+      if (!bill.phone) return alert("No phone number saved for this customer.");
+      window.location.href = `tel:${bill.phone}`;
+    } else if (channel === "sms") {
+      if (!bill.phone) return alert("No phone number saved for this customer.");
+      window.location.href = `sms:${bill.phone}?body=${encodeURIComponent(message)}`;
+    } else if (channel === "email") {
+      if (!bill.email) return alert("No email saved for this customer.");
+      window.location.href = `mailto:${bill.email}?subject=${encodeURIComponent(`Al Kanz Invoice ${bill.id}`)}&body=${encodeURIComponent(message)}`;
+    } else if (channel === "copy") {
+      alert("Bill message copied to clipboard.");
+    }
+  };
+
+  const createBill = (shouldPrint = false) => {
+    if (!billForm.customer.trim()) return alert("Please select or enter the customer name.");
+    if (!billForm.item.trim()) return alert("Please enter the upholstery item or service.");
+    if (billTotal <= 0) return alert("Enter a unit price greater than 0.");
+
+    const bill = {
+      id: `INV-${String(Date.now()).slice(-7)}`,
+      customer: billForm.customer.trim(),
+      customerId: billForm.customerId || "",
+      phone: billForm.phone.trim(),
+      whatsapp: billForm.whatsapp.trim(),
+      email: billForm.email.trim(),
+      address: billForm.address.trim(),
+      item: billForm.item.trim(),
+      description: billForm.description.trim(),
+      quantity: Number(billForm.quantity || 1),
+      unitPrice: Number(billForm.unitPrice || 0),
+      discount: discountAmount,
+      vatRate: Number(billForm.vat || 0),
+      vat: vatAmount,
+      amount: billTotal,
+      total: billTotal,
+      paid: paidNow,
+      balance: billBalance,
+      paymentMethod: billForm.paymentMethod,
+      status: paidNow >= billTotal ? "Paid" : paidNow > 0 ? "Part Paid" : "Unpaid",
+      date: new Date().toISOString(),
+      work: billForm.description.trim() || "Upholstery service",
+      material: billForm.item.trim(),
+      progress: 0,
+    };
+
+    if (setJobs) setJobs((prev) => [bill, ...(Array.isArray(prev) ? prev : [])]);
+    if (setPayments && paidNow > 0) {
+      setPayments((prev) => [{
+        id: `PAY-${Date.now()}`,
+        bill_id: bill.id,
+        customer: bill.customer,
+        amount: paidNow,
+        payment_method: bill.paymentMethod,
+        paid_at: bill.date,
+      }, ...(Array.isArray(prev) ? prev : [])]);
+    }
+    if (setTransactions && paidNow > 0) {
+      setTransactions((prev) => [{
+        id: `TX-${Date.now()}`,
+        transaction_type: "Income",
+        description: `Invoice · ${bill.customer} · ${bill.id}`,
+        amount: paidNow,
+        account: bill.paymentMethod,
+        transaction_date: bill.date,
+      }, ...(Array.isArray(prev) ? prev : [])]);
+    }
+
+    setShowBillBuilder(false);
+    setSelected(bill);
+    resetBillForm();
+
+    if (shouldPrint) {
+      setBillPrinting(true);
+      setBillRun((n) => n + 1);
+      setPostPrintBill(bill);
+      window.setTimeout(() => {
+        document.body.classList.add("printing-invoice");
+        window.print();
+        window.setTimeout(() => document.body.classList.remove("printing-invoice"), 400);
+        setBillPrinting(false);
+      }, 300);
+    }
+  };
+
+  const startBillPrint = () => openBillBuilder();
 
   return (
     <>
@@ -2542,7 +2622,7 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
                 <small>CREATE BILL</small>
                 <strong>{money(totalPaid)}</strong>
                 <span>{invoices.length} invoices · {money(outstanding)} outstanding</span>
-                <button type="button" className="create-bill-button" onClick={startBillPrint}>
+                <button type="button" className="create-bill-button" onClick={openBillBuilder}>
                   <ReceiptText size={15} /> Create & Print Bill
                 </button>
               </div>
@@ -2657,6 +2737,95 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
         </div>
       )}
 
+      {showBillBuilder && (
+        <div className="modal-backdrop bill-builder-backdrop">
+          <div className="bill-builder-modal">
+            <div className="bill-builder-head">
+              <div><span className="eyebrow">AL KANZ UPHOLSTERY · BILLING</span><h2>Create new bill</h2><p>Build the invoice, review the total, then print and send it.</p></div>
+              <button type="button" className="job-drawer-close" onClick={() => setShowBillBuilder(false)}><X size={19}/></button>
+            </div>
+            <div className="bill-builder-grid">
+              <div className="bill-form-pane">
+                <div className="bill-section-title"><span>01</span><div><strong>Customer</strong><small>Customer contact details</small></div></div>
+                <label className="field"><span>Saved customer</span>
+                  <select value={billForm.customerId} onChange={(e) => selectBillCustomer(e.target.value)}>
+                    <option value="">Select customer or enter manually</option>
+                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name || c.company}{c.phone ? ` · ${c.phone}` : ""}</option>)}
+                  </select>
+                </label>
+                <div className="bill-fields two">
+                  <label className="field"><span>Customer *</span><input value={billForm.customer} onChange={(e)=>setBillForm({...billForm,customer:e.target.value})} placeholder="Customer / company"/></label>
+                  <label className="field"><span>Phone</span><input value={billForm.phone} onChange={(e)=>setBillForm({...billForm,phone:e.target.value})} placeholder="+971 50..."/></label>
+                </div>
+                <div className="bill-fields two">
+                  <label className="field"><span>WhatsApp</span><input value={billForm.whatsapp} onChange={(e)=>setBillForm({...billForm,whatsapp:e.target.value})} placeholder="+971 50..."/></label>
+                  <label className="field"><span>Email</span><input type="email" value={billForm.email} onChange={(e)=>setBillForm({...billForm,email:e.target.value})} placeholder="customer@email.com"/></label>
+                </div>
+                <label className="field"><span>Address</span><input value={billForm.address} onChange={(e)=>setBillForm({...billForm,address:e.target.value})} placeholder="Dubai, UAE"/></label>
+
+                <div className="bill-section-title" style={{marginTop:22}}><span>02</span><div><strong>Bill item</strong><small>Upholstery work or material</small></div></div>
+                <label className="field"><span>Item / service *</span><input value={billForm.item} onChange={(e)=>setBillForm({...billForm,item:e.target.value})} placeholder="Leather replacement / sofa repair"/></label>
+                <label className="field"><span>Description</span><textarea rows="3" value={billForm.description} onChange={(e)=>setBillForm({...billForm,description:e.target.value})} placeholder="Work details, material, warranty..."/></label>
+                <div className="bill-fields three">
+                  <label className="field"><span>Quantity</span><input type="number" min="0.01" step="0.01" value={billForm.quantity} onChange={(e)=>setBillForm({...billForm,quantity:e.target.value})}/></label>
+                  <label className="field"><span>Unit price (AED)</span><input type="number" min="0" step="0.01" value={billForm.unitPrice} onChange={(e)=>setBillForm({...billForm,unitPrice:e.target.value})}/></label>
+                  <label className="field"><span>Discount (AED)</span><input type="number" min="0" step="0.01" value={billForm.discount} onChange={(e)=>setBillForm({...billForm,discount:e.target.value})}/></label>
+                </div>
+                <div className="bill-fields three">
+                  <label className="field"><span>VAT</span><select value={billForm.vat} onChange={(e)=>setBillForm({...billForm,vat:e.target.value})}><option value="0">0%</option><option value="5">5%</option></select></label>
+                  <label className="field"><span>Paid now (AED)</span><input type="number" min="0" step="0.01" value={billForm.paid} onChange={(e)=>setBillForm({...billForm,paid:e.target.value})}/></label>
+                  <label className="field"><span>Payment method</span><select value={billForm.paymentMethod} onChange={(e)=>setBillForm({...billForm,paymentMethod:e.target.value})}><option>Cash</option><option>Card</option><option>Bank Transfer</option><option>Credit</option></select></label>
+                </div>
+              </div>
+
+              <div className="bill-preview-pane">
+                <div className="invoice-preview">
+                  <div className="invoice-brand"><div><strong>AL KANZ</strong><span>UPHOLSTERY</span></div><b>INVOICE</b></div>
+                  <div className="invoice-preview-meta"><div><small>BILL TO</small><strong>{billForm.customer || "Customer name"}</strong><span>{billForm.phone || billForm.email || "Contact details"}</span><span>{billForm.address || "Dubai, UAE"}</span></div><div><small>DATE</small><strong>{new Date().toLocaleDateString("en-AE")}</strong><span>Due on receipt</span></div></div>
+                  <div className="invoice-item-preview"><div><small>DESCRIPTION</small><strong>{billForm.item || "Upholstery service"}</strong><span>{billForm.description || "Professional upholstery work"}</span></div><strong>{money(subtotal)}</strong></div>
+                  <div className="invoice-totals"><span>Subtotal <b>{money(subtotal)}</b></span><span>Discount <b>- {money(discountAmount)}</b></span><span>VAT ({billForm.vat}%) <b>{money(vatAmount)}</b></span><strong>Total <b>{money(billTotal)}</b></strong><span>Paid now <b>{money(paidNow)}</b></span><span>Balance <b>{money(billBalance)}</b></span></div>
+                  <div className="invoice-note">Thank you for choosing <b>Al Kanz Upholstery</b>. Please keep this invoice for your records.</div>
+                </div>
+                <div className="bill-preview-actions">
+                  <button type="button" className="secondary-button" onClick={()=>createBill(false)}><Save size={16}/> Save Bill</button>
+                  <button type="button" className="primary-button" onClick={()=>createBill(true)}><Printer size={16}/> Create &amp; Print Bill</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {postPrintBill && (
+        <div className="modal-backdrop post-print-backdrop">
+          <div className="card post-print-modal">
+            <div className="post-print-icon"><CheckCircle2 size={24}/></div>
+            <span className="eyebrow">BILL READY</span>
+            <h2>Invoice printed successfully</h2>
+            <p><strong>{postPrintBill.id}</strong> is saved. Send the bill directly to the customer.</p>
+            <div className="post-print-recipient"><div className="customer-avatar">{String(postPrintBill.customer||"C").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><div><strong>{postPrintBill.customer}</strong><span>{postPrintBill.phone || "No phone"} · {postPrintBill.email || "No email"}</span></div></div>
+            <div className="post-print-actions">
+              <button type="button" className="share-btn whatsapp" onClick={()=>shareBill(postPrintBill,"whatsapp")}><MessageCircle size={17}/> WhatsApp</button>
+              <button type="button" className="share-btn botim" onClick={()=>shareBill(postPrintBill,"botim")}><MessageCircle size={17}/> Botim</button>
+              <button type="button" className="share-btn" onClick={()=>shareBill(postPrintBill,"phone")}><Phone size={17}/> Phone</button>
+              <button type="button" className="share-btn" onClick={()=>shareBill(postPrintBill,"sms")}><Smartphone size={17}/> SMS</button>
+              <button type="button" className="share-btn" onClick={()=>shareBill(postPrintBill,"email")}><Mail size={17}/> Email</button>
+              <button type="button" className="share-btn" onClick={()=>shareBill(postPrintBill,"copy")}><Copy size={17}/> Copy</button>
+            </div>
+            <div className="post-print-footer"><button type="button" className="secondary-button" onClick={()=>setPostPrintBill(null)}>Not now</button><button type="button" className="primary-button" onClick={()=>{setPostPrintBill(null);setSelected(postPrintBill);}}>Open invoice</button></div>
+          </div>
+        </div>
+      )}
+
+      <div className="print-invoice-sheet">
+        <div className="print-sheet-brand"><div><strong>AL KANZ</strong><span>UPHOLSTERY</span></div><b>INVOICE</b></div>
+        <div className="print-sheet-line"/>
+        <div className="print-sheet-meta"><div><small>BILL TO</small><strong>{postPrintBill?.customer || "Customer"}</strong><span>{postPrintBill?.phone || ""}</span><span>{postPrintBill?.address || "Dubai, UAE"}</span></div><div><small>INVOICE</small><strong>{postPrintBill?.id || "—"}</strong><span>{postPrintBill ? new Date(postPrintBill.date).toLocaleDateString("en-AE") : ""}</span></div></div>
+        <div className="print-sheet-item"><div><strong>{postPrintBill?.item || "Upholstery service"}</strong><span>{postPrintBill?.description || ""}</span></div><strong>{money(postPrintBill?.total || 0)}</strong></div>
+        <div className="print-sheet-totals"><span>Subtotal <b>{money(postPrintBill?.total - (postPrintBill?.vat || 0) + (postPrintBill?.discount || 0))}</b></span><span>Discount <b>- {money(postPrintBill?.discount || 0)}</b></span><span>VAT <b>{money(postPrintBill?.vat || 0)}</b></span><strong>Total <b>{money(postPrintBill?.total || 0)}</b></strong><span>Paid <b>{money(postPrintBill?.paid || 0)}</b></span><span>Balance <b>{money(postPrintBill?.balance || 0)}</b></span></div>
+        <div className="print-sheet-footer">Thank you for choosing Al Kanz Upholstery · Dubai, UAE</div>
+      </div>
+
       {selected && (
         <div className="modal-backdrop">
           <div className="card" style={{width:"min(620px,94vw)",padding:"28px",position:"relative"}}>
@@ -2671,6 +2840,22 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
               <div className="table-row"><span>Total</span><strong>{money(selected.amount)}</strong></div>
               <div className="table-row"><span>Paid</span><strong>{money(selected.paid)}</strong></div>
               <div className="table-row"><span>Balance</span><strong>{money(selected.balance)}</strong></div>
+            </div>
+            <div className="invoice-contact-card">
+              <div><span>PHONE</span><strong>{selected.phone || "Not saved"}</strong></div>
+              <div><span>WHATSAPP</span><strong>{selected.whatsapp || selected.phone || "Not saved"}</strong></div>
+              <div><span>EMAIL</span><strong>{selected.email || "Not saved"}</strong></div>
+            </div>
+            <div className="invoice-share-center">
+              <div className="share-center-head"><div><span className="eyebrow">SEND INVOICE</span><strong>Choose a delivery channel</strong><small>The message is copied automatically so Botim can be used even when no direct deep-link is available.</small></div></div>
+              <div className="post-print-actions">
+                <button type="button" className="share-btn whatsapp" onClick={()=>shareBill(selected,"whatsapp")}><MessageCircle size={17}/> WhatsApp</button>
+                <button type="button" className="share-btn botim" onClick={()=>shareBill(selected,"botim")}><MessageCircle size={17}/> Botim</button>
+                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"phone")}><Phone size={17}/> Call customer</button>
+                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"sms")}><Smartphone size={17}/> SMS</button>
+                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"email")}><Mail size={17}/> Email</button>
+                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"copy")}><Copy size={17}/> Copy message</button>
+              </div>
             </div>
             {selected.balance > 0 && recordPayment && (
               <div style={{marginTop:20}}>
@@ -2690,107 +2875,30 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
    REPORTS
 ============================================================ */
 
-function ReportsPage({
-  jobs,
-  totalPaid,
-  outstanding,
-  totalExpenses = 0,
-  netCash = 0,
-  expenses = [],
-}) {
-  const total = jobs.reduce((a, b) => a + Number(b.amount || 0), 0);
-
-  const monthlyRevenue = Array.from({ length: 12 }, (_, month) => ({
-    month: new Date(2026, month, 1).toLocaleString("en", { month: "short" }),
-    revenue: jobs.reduce((sum, job) => {
-      const raw = job.date || "";
-      const d = new Date(raw);
-      return !Number.isNaN(d.getTime()) && d.getMonth() === month
-        ? sum + Number(job.amount || 0)
-        : sum;
-    }, 0),
-  }));
-
-  const dailyExpenses = Array.from({ length: 7 }, (_, index) => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - (6 - index));
-    const key = d.toISOString().slice(0, 10);
-    return {
-      day: d.toLocaleDateString("en-AE", { weekday: "short", day: "2-digit" }),
-      amount: expenses.reduce((sum, expense) => {
-        const expenseKey = String(expense.expense_date || expense.date || "").slice(0, 10);
-        return expenseKey === key ? sum + Number(expense.amount || 0) : sum;
-      }, 0),
-    };
-  });
-
-  return (
-    <>
-      <PageTitle
-        eyebrow="FINANCE · ANALYTICS"
-        title="Reports & Insights"
-        subtitle="Understand revenue, collections, expenses and financial movement."
-      />
-      <div className="report-toolbar">
-        <div><span>LIVE DATA</span><strong>Financial overview</strong><small>Generated from current billing and account records.</small></div>
-        <div className="report-toolbar-actions">
-          <button type="button" className="secondary-button" onClick={() => window.print()}><Printer size={15}/> Print Report</button>
-          <button type="button" className="secondary-button" onClick={() => { const rows=["Metric,Amount","Total Revenue,"+total,"Payments Collected,"+totalPaid,"Outstanding,"+outstanding,"Expenses,"+totalExpenses,"Net Cash Movement,"+netCash].join("\n"); const blob=new Blob([rows],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="al-kanz-report.csv"; a.click(); URL.revokeObjectURL(a.href); }}><Download size={15}/> Export CSV</button>
-        </div>
-      </div>
-
-      <div className="report-grid">
-        <ReportBox icon={TrendingUp} title="Total Revenue" value={money(total)} note="Total value of workshop jobs" />
-        <ReportBox icon={CircleDollarSign} title="Payments Collected" value={money(totalPaid)} note="Customer payments received" />
-        <ReportBox icon={AlertCircle} title="Outstanding" value={money(outstanding)} note="Still to be collected" />
-        <ReportBox icon={Wallet} title="Expenses" value={money(totalExpenses)} note="Workshop costs recorded" />
-        <ReportBox icon={TrendingUp} title="Net Cash Movement" value={money(netCash)} note="Payments less expenses" />
-        <ReportBox icon={CheckCircle2} title="Billing Records" value={jobs.length} note="Records available for invoicing" />
-      </div>
-
-      <div className="report-insight-strip">
-        <div className="report-insight"><span><PieChart size={17}/> COLLECTION RATE</span><strong>{total ? Math.round((totalPaid / total) * 100) : 0}%</strong><small>Revenue already collected</small></div>
-        <div className="report-insight"><span><TrendingDown size={17}/> CASH GAP</span><strong>{money(Math.max(0, outstanding - totalExpenses))}</strong><small>Outstanding less recorded expenses</small></div>
-        <div className="report-insight"><span><Boxes size={17}/> WORKSHOP VOLUME</span><strong>{jobs.length}</strong><small>Jobs contributing to revenue</small></div>
-        <div className="report-insight"><span><Target size={17}/> AVERAGE JOB</span><strong>{money(jobs.length ? total / jobs.length : 0)}</strong><small>Average recorded job value</small></div>
-      </div>
-      <div className="reports-chart-grid">
-        <div className="card report-chart">
-          <CardHeader eyebrow="REVENUE" title="Monthly workshop performance" subtitle="Revenue by month from recorded jobs" />
-          <div className="bars live-bars">
-            {monthlyRevenue.map((item) => {
-              const max = Math.max(...monthlyRevenue.map(x => x.revenue), 1);
-              const height = item.revenue ? Math.max(8, (item.revenue / max) * 100) : 4;
-              return (
-                <div className="bar-wrap" key={item.month}>
-                  <div className="bar animated-bar" style={{ height: `${height}%` }} title={money(item.revenue)} />
-                  <span>{item.month}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="card report-chart daily-expense-card">
-          <CardHeader eyebrow="EXPENSES" title="Daily expense" subtitle="Last 7 days of recorded expenses" />
-          <div className="expense-bars">
-            {dailyExpenses.map((item) => {
-              const max = Math.max(...dailyExpenses.map(x => x.amount), 1);
-              const height = item.amount ? Math.max(8, (item.amount / max) * 100) : 4;
-              return (
-                <div className="expense-bar-wrap" key={item.day}>
-                  <span className="expense-value">{money(item.amount)}</span>
-                  <div className="expense-bar" style={{ height: `${height}%` }} title={money(item.amount)} />
-                  <span className="expense-day">{item.day}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </>
-  );
+function ReportsPage({ jobs = [], totalPaid, outstanding, totalExpenses = 0, netCash = 0, expenses = [] }) {
+  const [period, setPeriod] = useState("12m");
+  const [view, setView] = useState("overview");
+  const [status, setStatus] = useState("all");
+  const safeJobs=Array.isArray(jobs)?jobs:[]; const safeExpenses=Array.isArray(expenses)?expenses:[];
+  const now=new Date();
+  const cutoff = period==="7d"?7:period==="30d"?30:period==="90d"?90:3650;
+  const inPeriod=(raw)=>{const d=new Date(raw);return Number.isNaN(d.getTime())||cutoff===3650||(now-d)<=cutoff*86400000;};
+  const filtered=safeJobs.filter(j=>inPeriod(j.date||j.created_at||j.deliveryDate)&&(status==="all"||String(j.status||"").toLowerCase()===status));
+  const revenue=filtered.reduce((a,b)=>a+Number(b.amount||0),0); const paid=filtered.reduce((a,b)=>a+Number(b.paid||0),0); const pending=Math.max(0,revenue-paid); const jobCount=filtered.length;
+  const statusCounts={received:filtered.filter(j=>String(j.status).toLowerCase()==="received").length,progress:filtered.filter(j=>String(j.status).toLowerCase().includes("progress")).length,ready:filtered.filter(j=>String(j.status).toLowerCase()==="ready").length,delivered:filtered.filter(j=>String(j.status).toLowerCase()==="delivered").length};
+  const monthly=Array.from({length:6},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-(5-i),1);return {label:d.toLocaleString("en",{month:"short"}),value:safeJobs.filter(j=>{const x=new Date(j.date||j.created_at);return !Number.isNaN(x.getTime())&&x.getMonth()===d.getMonth()&&x.getFullYear()===d.getFullYear()}).reduce((a,b)=>a+Number(b.amount||0),0)};});
+  const topCustomers=Object.values(filtered.reduce((acc,j)=>{const k=j.customer||"Unknown";acc[k]=(acc[k]||0)+Number(j.amount||0);return acc;},{})).sort((a,b)=>b-a).slice(0,5);
+  const exportCsv=()=>{const rows=["Report,Value",`Revenue,${revenue}`,`Collected,${paid}`,`Outstanding,${pending}`,`Expenses,${totalExpenses}`,`Net Cash,${netCash}`,`Jobs,${jobCount}`].join("\n");const blob=new Blob([rows],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`al-kanz-${view}-report.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);};
+  return <>
+    <PageTitle eyebrow="FINANCE · BUSINESS INTELLIGENCE" title="Reports & Insights" subtitle="Track sales, collections, jobs, expenses, customers and workshop performance."/>
+    <div className="report-control-panel"><div className="report-view-tabs">{[["overview","Overview"],["revenue","Revenue"],["collections","Collections"],["expenses","Expenses"],["jobs","Jobs"],["customers","Customers"]].map(([k,l])=><button key={k} className={view===k?"active":""} onClick={()=>setView(k)}>{l}</button>)}</div><div className="report-filters"><select value={period} onChange={e=>setPeriod(e.target.value)}><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="12m">Last 12 months</option></select><select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All job statuses</option><option value="received">Received</option><option value="in progress">In Progress</option><option value="ready">Ready</option><option value="delivered">Delivered</option></select><button className="secondary-button" onClick={exportCsv}><Download size={15}/> Export CSV</button><button className="primary-button" onClick={()=>window.print()}><Printer size={15}/> Print</button></div></div>
+    <div className="report-grid report-grid-rich"><ReportBox icon={TrendingUp} title="Revenue" value={money(revenue)} note={`${jobCount} jobs in selected period`}/><ReportBox icon={CircleDollarSign} title="Collected" value={money(paid)} note="Payments received"/><ReportBox icon={AlertCircle} title="Pending" value={money(pending)} note="Awaiting collection"/><ReportBox icon={Wallet} title="Expenses" value={money(totalExpenses)} note="Recorded workshop costs"/><ReportBox icon={TrendingUp} title="Net cash" value={money(netCash)} note="Collected less expenses"/><ReportBox icon={CheckCircle2} title="Collection rate" value={`${revenue?Math.round((paid/revenue)*100):0}%`} note="Revenue collected"/></div>
+    <div className="reports-main-grid">
+      <div className="card report-chart report-chart-large"><CardHeader eyebrow="PERFORMANCE" title="Revenue trend" subtitle="Monthly billed value · last 6 months"/><div className="bars live-bars report-bars-large">{monthly.map(x=>{const max=Math.max(...monthly.map(y=>y.value),1);return <div className="bar-wrap" key={x.label}><strong>{money(x.value)}</strong><div className="bar animated-bar" style={{height:`${x.value?Math.max(8,(x.value/max)*100):4}%`}}/><span>{x.label}</span></div>})}</div></div>
+      <div className="card report-breakdown-card"><CardHeader eyebrow="WORKSHOP" title="Job status" subtitle="Current workload mix"/><div className="report-status-ring"><div><strong>{safeJobs.filter(j=>!['Completed','Delivered'].includes(j.status)).length}</strong><span>open jobs</span></div></div><div className="status-breakdown"><div><span><i className="status-dot received"/>Received</span><strong>{statusCounts.received}</strong></div><div><span><i className="status-dot progress"/>In progress</span><strong>{statusCounts.progress}</strong></div><div><span><i className="status-dot ready"/>Ready</span><strong>{statusCounts.ready}</strong></div><div><span><i className="status-dot delivered"/>Delivered</span><strong>{statusCounts.delivered}</strong></div></div></div>
+    </div>
+    <div className="reports-bottom-grid"><div className="card report-list-card"><CardHeader eyebrow="COLLECTIONS" title="Outstanding invoices" subtitle="Jobs with a remaining balance"/><div className="report-list">{safeJobs.filter(j=>Number(j.amount||0)>Number(j.paid||0)).slice(0,8).map(j=><div key={j.id}><span><strong>{j.customer}</strong><small>{j.id} · {j.item||j.work}</small></span><strong className="orange-text">{money(Number(j.amount||0)-Number(j.paid||0))}</strong></div>)}{!safeJobs.some(j=>Number(j.amount||0)>Number(j.paid||0))&&<EmptyState icon={CheckCircle2} title="All caught up" text="No outstanding job balances found."/>}</div></div><div className="card report-list-card"><CardHeader eyebrow="CUSTOMERS" title="Top customers" subtitle="Highest billed value in the selected period"/><div className="report-list">{Object.entries(filtered.reduce((a,j)=>{const k=j.customer||"Unknown";a[k]=(a[k]||0)+Number(j.amount||0);return a;},{})).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,value],i)=><div key={name}><span><strong>0{i+1} · {name}</strong><small>Customer billing contribution</small></span><strong>{money(value)}</strong></div>)}{!filtered.length&&<EmptyState icon={Users} title="No customer data" text="Create jobs to populate this report."/>}</div></div><div className="card report-list-card"><CardHeader eyebrow="EXPENSES" title="Recent expense activity" subtitle="Latest recorded workshop costs"/><div className="report-list">{safeExpenses.slice(0,6).map((x,i)=><div key={x.id||i}><span><strong>{x.category||"Workshop"}</strong><small>{x.description||"Expense"}</small></span><strong className="expense">-{money(x.amount)}</strong></div>)}{!safeExpenses.length&&<EmptyState icon={Wallet} title="No expenses" text="Recorded expenses will appear here."/>}</div></div></div>
+  </>;
 }
 
 function ReportBox({
@@ -3017,81 +3125,171 @@ function NotificationSetting({ title, description, checked, onChange }) {
   </button>;
 }
 
-function QuotationPage({ page, quotations = [], setQuotations, jobs = [] }) {
-  const safeQuotations = Array.isArray(quotations) ? quotations : [];
+function QuotationPage({ page, quotations = [], setQuotations }) {
+  const [form, setForm] = useState({
+    customer: "",
+    phone: "",
+    item: "",
+    description: "",
+    quantity: "1",
+    unitPrice: "",
+    validity: "30 days",
+  });
   const [showForm, setShowForm] = useState(page === "New Quotation");
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [printOpen, setPrintOpen] = useState(false);
   const [aiText, setAiText] = useState("");
-  const [form, setForm] = useState({ customer:"", phone:"", validity:"30 days", discount:"0", vatRate:"5", notes:"", paymentTerms:"50% advance · 50% on delivery" });
-  const [items, setItems] = useState([{ item:"", description:"", quantity:"1", unitPrice:"" }]);
 
-  const subtotal = items.reduce((sum,x)=>sum + Number(x.quantity||0)*Number(x.unitPrice||0),0);
-  const discount = Math.min(subtotal, Math.max(0, Number(form.discount||0)));
-  const taxable = Math.max(0, subtotal-discount);
-  const vat = taxable * (Number(form.vatRate||0)/100);
-  const grandTotal = taxable + vat;
-  const setItem=(index,key,value)=>setItems(prev=>prev.map((x,i)=>i===index?{...x,[key]:value}:x));
-  const addItem=()=>setItems(prev=>[...prev,{item:"",description:"",quantity:"1",unitPrice:""}]);
-  const removeItem=(index)=>setItems(prev=>prev.length===1?prev:prev.filter((_,i)=>i!==index));
-  const runQuotationAI=()=>{
-    const names=items.filter(x=>x.item).map(x=>x.item).join(", ") || "the upholstery work";
-    const price=grandTotal ? `The current estimate is ${money(grandTotal)} including VAT.` : "Add item prices so the estimate can be checked.";
-    setAiText(`AI review: Confirm measurements, material grade/colour, foam condition, stitching and finishing for ${names}. Add a clear delivery expectation and collect the agreed advance before workshop production. ${price}`);
+  const safeQuotations = Array.isArray(quotations) ? quotations : [];
+  const subtotal = Number(form.quantity || 0) * Number(form.unitPrice || 0);
+  const vat = subtotal * 0.05;
+  const grandTotal = subtotal + vat;
+
+  const runQuotationAI = () => {
+    const item = form.item || "your upholstery service";
+    const customer = form.customer || "the customer";
+    const tips = [
+      `Suggested scope: Inspect ${item}, confirm material/colour, complete the upholstery work, quality-check the finish and hand over after approval.`,
+      `Pricing tip: keep the quotation itemized and show labour, materials, VAT and the final total separately.`,
+      `Customer note: ${customer} should approve the quotation before the work is converted into an invoice.`,
+    ];
+    setAiText(tips.join(" "));
   };
-  const save=()=>{
-    const validItems=items.filter(x=>x.item && Number(x.quantity)>0 && Number(x.unitPrice)>=0);
-    if(!form.customer || !validItems.length || !validItems.some(x=>Number(x.unitPrice)>0)){ alert("Customer and at least one priced item are required."); return; }
-    const q={id:`QT-${String(Date.now()).slice(-6)}`,customer:form.customer,phone:form.phone,validity:form.validity,discount,vatRate:Number(form.vatRate||0),notes:form.notes,paymentTerms:form.paymentTerms,items:validItems.map(x=>({...x,quantity:Number(x.quantity),unitPrice:Number(x.unitPrice),total:Number(x.quantity)*Number(x.unitPrice)})),item:validItems[0].item,description:validItems[0].description,quantity:Number(validItems[0].quantity),unitPrice:Number(validItems[0].unitPrice),subtotal,vat,amount:grandTotal,status:"Draft",date:new Date().toLocaleDateString("en-AE")};
-    setQuotations(prev=>[q,...(Array.isArray(prev)?prev:[])]); setSelectedQuote(q); setShowForm(false);
+
+  const save = () => {
+    if (!form.customer || !form.item || !form.unitPrice) {
+      alert("Customer, item and unit price are required.");
+      return;
+    }
+    const q = {
+      id: `QT-${String(Date.now()).slice(-6)}`,
+      ...form,
+      quantity: Number(form.quantity || 1),
+      unitPrice: Number(form.unitPrice || 0),
+      subtotal,
+      vat,
+      amount: grandTotal,
+      status: "Draft",
+      date: new Date().toLocaleDateString("en-AE"),
+    };
+    setQuotations(prev => [q, ...(Array.isArray(prev) ? prev : [])]);
+    setSelectedQuote(q);
+    setForm({ customer:"", phone:"", item:"", description:"", quantity:"1", unitPrice:"", validity:"30 days" });
+    setShowForm(false);
   };
-  const loadQuote=(q)=>{setSelectedQuote(q);setShowForm(false);};
-  return <>
-    <PageTitle eyebrow="SALES · BILLING STYLE" title={page === "New Quotation" ? "New Quotation" : "Quotations"} subtitle="Build quotations with multiple line items, discount, VAT, payment terms and a live customer-facing document." button={!showForm?"New Quotation":null} onClick={()=>{setShowForm(true);setSelectedQuote(null);}} />
-    {showForm && <div className="quote-builder-shell">
-      <section className="card quote-builder-form">
-        <div className="quote-builder-top"><div><span className="eyebrow">QUOTATION BUILDER</span><h2>Create customer estimate</h2><p>Use it like a billing screen: add as many upholstery services and materials as needed.</p></div><div className="quote-draft-pill">DRAFT · AED</div></div>
-        <div className="quote-section"><div className="quote-section-title"><span>01</span><div><b>Customer</b><small>Who is receiving this quotation?</small></div></div><div className="quote-fields"><label>Customer<input value={form.customer} onChange={e=>setForm({...form,customer:e.target.value})} placeholder="Customer / company name" /></label><label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+971 ..." /></label><label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label></div></div>
-        <div className="quote-section"><div className="quote-section-title"><span>02</span><div><b>Items & services</b><small>Add upholstery work, materials, labour or delivery as separate lines.</small></div><button className="primary-button" type="button" onClick={addItem}><Plus size={15}/> Add line</button></div>
-          <div className="quote-line-table"><div className="quote-line-head"><span>ITEM / SERVICE</span><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span><span></span></div>{items.map((x,i)=><div className="quote-line" key={i}><input value={x.item} onChange={e=>setItem(i,"item",e.target.value)} placeholder="Sofa upholstery"/><input value={x.description} onChange={e=>setItem(i,"description",e.target.value)} placeholder="Leather / fabric / labour"/><input type="number" min="1" value={x.quantity} onChange={e=>setItem(i,"quantity",e.target.value)}/><input type="number" min="0" value={x.unitPrice} onChange={e=>setItem(i,"unitPrice",e.target.value)} placeholder="0.00"/><strong>{money(Number(x.quantity||0)*Number(x.unitPrice||0))}</strong><button type="button" className="quote-remove" onClick={()=>removeItem(i)}><Trash2 size={15}/></button></div>)}</div>
+
+  return (
+    <>
+      <PageTitle
+        eyebrow="SALES · UAE"
+        title={page === "New Quotation" ? "New Quotation" : "Quotations"}
+        subtitle="Create professional quotations using the same clean document structure as an invoice."
+        button={!showForm ? "New Quotation" : null}
+        onClick={() => setShowForm(true)}
+      />
+
+      {showForm && (
+        <div className="quotation-invoice-layout">
+          <div className="card quotation-form-card">
+            <CardHeader eyebrow="QUOTATION DETAILS" title="Create quotation" subtitle="Demo quotation — prices can be edited before saving." />
+            <div className="settings-form">
+              <label>Customer<input value={form.customer} onChange={e=>setForm({...form,customer:e.target.value})} placeholder="Customer name" /></label>
+              <label>Phone<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+971..." /></label>
+              <label>Item / Service<input value={form.item} onChange={e=>setForm({...form,item:e.target.value})} placeholder="Sofa upholstery, car seat, etc." /></label>
+              <label>Quantity<input type="number" min="1" value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})} /></label>
+              <label>Unit Price (AED)<input type="number" min="0" value={form.unitPrice} onChange={e=>setForm({...form,unitPrice:e.target.value})} placeholder="0.00" /></label>
+              <label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label>
+              <label className="full-field">Description<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Work included, materials, terms..." rows="4" /></label>
+              <div className="quotation-ai-box full-field">
+                <div><Sparkles size={17}/><div><strong>AI quotation helper</strong><small>Generate a professional scope and pricing reminder from your form.</small></div></div>
+                <button type="button" className="secondary-button" onClick={runQuotationAI}><Sparkles size={15}/> Help me</button>
+                {aiText && <p>{aiText}</p>}
+              </div>
+              <div className="settings-form-actions full-field quotation-action-bar"><button type="button" className="primary-button" onClick={save}><Save size={16}/> Save Quotation</button><button type="button" className="secondary-button" onClick={()=>setPrintOpen(true)}><Printer size={16}/> Print Options</button><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button></div>
+            </div>
+          </div>
+
+          <div className="card quotation-document">
+            <div className="invoice-document-head">
+              <div><span className="eyebrow">AL KANZ UPHOLSTERY</span><h2>QUOTATION</h2><p>Dubai, UAE · AED</p></div>
+              <div className="document-number"><strong>QT-PREVIEW</strong><span>Date: {new Date().toLocaleDateString("en-AE")}</span><span>Valid: {form.validity}</span></div>
+            </div>
+            <div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{form.customer || "Customer Name"}</strong><span>{form.phone || "Customer phone"}</span></div></div>
+            <div className="invoice-items">
+              <div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div>
+              <div className="invoice-item-row"><span><strong>{form.item || "Item / Service"}</strong><small>{form.description || "Description of proposed work"}</small></span><span>{form.quantity || 1}</span><span>{money(form.unitPrice)}</span><strong>{money(subtotal)}</strong></div>
+            </div>
+            <div className="document-totals"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(grandTotal)}</strong></div></div>
+            <div className="document-note"><strong>Quotation terms</strong><span>This quotation is a demo estimate and is valid for {form.validity}. Final billing may vary based on approved work or materials.</span></div>
+          </div>
         </div>
-        <div className="quote-section"><div className="quote-section-title"><span>03</span><div><b>Terms & notes</b><small>Set payment, validity and customer-facing notes.</small></div></div><div className="quote-fields"><label>Discount (AED)<input type="number" min="0" value={form.discount} onChange={e=>setForm({...form,discount:e.target.value})}/></label><label>VAT %<input type="number" min="0" value={form.vatRate} onChange={e=>setForm({...form,vatRate:e.target.value})}/></label><label>Payment terms<select value={form.paymentTerms} onChange={e=>setForm({...form,paymentTerms:e.target.value})}><option>50% advance · 50% on delivery</option><option>100% advance</option><option>30% advance · balance on delivery</option><option>Payment on completion</option></select></label><label className="full-field">Notes<textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Material approval, delivery expectations, special instructions..."/></label></div></div>
-        <div className="quote-ai-panel"><div className="quote-ai-title"><div className="ai-orb"><Sparkles size={18}/></div><div><b>AI quotation assistant</b><small>Improve scope, pricing checks and customer wording.</small></div><button className="primary-button" type="button" onClick={runQuotationAI}><Sparkles size={15}/> Analyze quotation</button></div><div className="quote-ai-chips"><button type="button" onClick={()=>setAiText("Add measurement, material grade, colour, stitching and finishing details before customer approval.")}>Scope check</button><button type="button" onClick={()=>setAiText("Consider separating material, labour and delivery lines so the customer can understand the estimate clearly.")}>Pricing suggestion</button><button type="button" onClick={()=>setAiText("Recommended wording: work starts after quotation approval and the agreed advance payment is received.")}>Payment wording</button></div>{aiText&&<div className="quote-ai-result"><Sparkles size={15}/><span>{aiText}</span></div>}</div>
-        <div className="quote-save-bar"><div><small>GRAND TOTAL</small><strong>{money(grandTotal)}</strong></div><button className="secondary-button" type="button" onClick={()=>setShowForm(false)}>Cancel</button><button className="primary-button" type="button" onClick={save}><Save size={16}/> Save quotation</button></div>
-      </section>
-      <aside className="card quote-live-preview"><div className="quote-preview-head"><span>LIVE PREVIEW</span><b>QUOTATION</b></div><div className="quote-paper"><div className="quote-paper-brand"><div><strong>AL KANZ</strong><small>UPHOLSTERY</small></div><b>QUOTATION</b></div><div className="quote-paper-meta"><span>TO<br/><b>{form.customer||"Customer name"}</b><small>{form.phone||"Customer phone"}</small></span><span>DATE<br/><b>{new Date().toLocaleDateString("en-AE")}</b><small>Valid {form.validity}</small></span></div><div className="quote-paper-items"><div><span>DESCRIPTION</span><span>QTY</span><span>AMOUNT</span></div>{items.map((x,i)=><div key={i}><span><b>{x.item||"Item / service"}</b><small>{x.description||"—"}</small></span><span>{x.quantity||1}</span><strong>{money(Number(x.quantity||0)*Number(x.unitPrice||0))}</strong></div>)}</div><div className="quote-paper-total"><span>Subtotal <b>{money(subtotal)}</b></span><span>Discount <b>- {money(discount)}</b></span><span>VAT ({form.vatRate}%) <b>{money(vat)}</b></span><strong>Grand Total <b>{money(grandTotal)}</b></strong></div><div className="quote-paper-terms"><b>Payment terms</b><span>{form.paymentTerms}</span><b>Notes</b><span>{form.notes||"Final work and material selection subject to customer approval."}</span></div></div></aside>
-    </div>}
-    {!showForm && <div className="quotation-list-shell"><div className="quotation-list-toolbar"><div><span>QUOTATION REGISTER</span><strong>{safeQuotations.length} saved quotations</strong></div><button className="secondary-button" onClick={()=>{setShowForm(true);setSelectedQuote(null);}}><Plus size={15}/> New quotation</button></div><div className="table-card"><div className="table-head"><span>QUOTE</span><span>CUSTOMER</span><span>ITEMS</span><span>AMOUNT</span><span>STATUS</span></div>{safeQuotations.length===0?<EmptyState icon={FileText} title="No quotations yet" text="Create your first billing-style quotation."/>:safeQuotations.map(q=><button type="button" className="table-row quotation-row-button" key={q.id} onClick={()=>loadQuote(q)}><strong>{q.id}</strong><span>{q.customer}</span><span>{q.items?.length || 1} line{(q.items?.length||1)===1?"":"s"}</span><strong>{money(q.amount)}</strong><Status status={q.status}/></button>)}</div></div>}
-    {selectedQuote && <div className="modal-backdrop"><div className="card quotation-document quotation-modal-document"><button className="job-drawer-close" style={{position:"absolute",right:18,top:18}} onClick={()=>setSelectedQuote(null)}><X size={20}/></button><div className="invoice-document-head"><div><span className="eyebrow">AL KANZ UPHOLSTERY</span><h2>QUOTATION</h2><p>Dubai, UAE · AED</p></div><div className="document-number"><strong>{selectedQuote.id}</strong><span>{selectedQuote.date}</span><span>Valid: {selectedQuote.validity}</span></div></div><div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{selectedQuote.customer}</strong><span>{selectedQuote.phone||"—"}</span></div></div><div className="invoice-items"><div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div>{(selectedQuote.items||[{item:selectedQuote.item,description:selectedQuote.description,quantity:selectedQuote.quantity,unitPrice:selectedQuote.unitPrice,total:selectedQuote.subtotal}]).map((x,i)=><div className="invoice-item-row" key={i}><span><strong>{x.item}</strong><small>{x.description||"—"}</small></span><span>{x.quantity}</span><span>{money(x.unitPrice)}</span><strong>{money(x.total ?? Number(x.quantity||0)*Number(x.unitPrice||0))}</strong></div>)}</div><div className="document-totals"><div><span>Subtotal</span><strong>{money(selectedQuote.subtotal)}</strong></div><div><span>Discount</span><strong>- {money(selectedQuote.discount||0)}</strong></div><div><span>VAT ({selectedQuote.vatRate||5}%)</span><strong>{money(selectedQuote.vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(selectedQuote.amount)}</strong></div></div><div className="document-note"><strong>Payment terms</strong><span>{selectedQuote.paymentTerms||"50% advance · 50% on delivery"}</span><strong>Notes</strong><span>{selectedQuote.notes||"Final work and material selection subject to customer approval."}</span></div><div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print quotation</button><button className="secondary-button" onClick={()=>{const copy={...selectedQuote,id:`QT-${String(Date.now()).slice(-6)}`,status:"Draft",date:new Date().toLocaleDateString("en-AE")};setQuotations(prev=>[copy,...prev]);setSelectedQuote(copy);}}><RefreshCw size={16}/> Duplicate</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div></div></div>}
-    {printOpen&&<PrintOptionsModal title="Quotation printing" close={()=>setPrintOpen(false)} options={[["Print quotation","Customer-facing quotation",()=>window.print()],["Print customer copy","Customer file copy",()=>window.print()],["Print internal copy","Workshop record copy",()=>window.print()]]}/>} 
-  </>;
+      )}
+
+      {!showForm && (
+        <div className="table-card">
+          <div className="table-head"><span>QUOTE</span><span>CUSTOMER</span><span>ITEM</span><span>AMOUNT</span><span>STATUS</span></div>
+          {safeQuotations.length === 0 ? <EmptyState icon={FileText} title="No quotations yet" text="Create your first quotation." /> : safeQuotations.map(q => (
+            <button type="button" className="table-row quotation-row-button" key={q.id} onClick={()=>setSelectedQuote(q)}>
+              <strong>{q.id}</strong><span>{q.customer}</span><span>{q.item}</span><strong>{money(q.amount)}</strong><Status status={q.status}/>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedQuote && (
+        <div className="modal-backdrop">
+          <div className="card quotation-document quotation-modal-document">
+            <button className="job-drawer-close" style={{position:"absolute",right:18,top:18}} onClick={()=>setSelectedQuote(null)}><X size={20}/></button>
+            <div className="invoice-document-head"><div><span className="eyebrow">AL KANZ UPHOLSTERY</span><h2>QUOTATION</h2><p>Dubai, UAE · AED</p></div><div className="document-number"><strong>{selectedQuote.id}</strong><span>{selectedQuote.date}</span><span>Valid: {selectedQuote.validity}</span></div></div>
+            <div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{selectedQuote.customer}</strong><span>{selectedQuote.phone || "—"}</span></div></div>
+            <div className="invoice-items"><div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div><div className="invoice-item-row"><span><strong>{selectedQuote.item}</strong><small>{selectedQuote.description || "—"}</small></span><span>{selectedQuote.quantity}</span><span>{money(selectedQuote.unitPrice)}</span><strong>{money(selectedQuote.subtotal)}</strong></div></div>
+            <div className="document-totals"><div><span>Subtotal</span><strong>{money(selectedQuote.subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(selectedQuote.vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(selectedQuote.amount)}</strong></div></div>
+            <div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print Quotation</button><button className="secondary-button" onClick={()=>setPrintOpen(true)}><SlidersHorizontal size={16}/> Print Options</button><button className="secondary-button" onClick={()=>{ const copy={...selectedQuote,id:`QT-${String(Date.now()).slice(-6)}`,status:"Draft",date:new Date().toLocaleDateString("en-AE")}; setQuotations(prev=>[copy,...prev]); setSelectedQuote(copy); }}><RefreshCw size={16}/> Duplicate</button><button className="secondary-button" onClick={()=>{ setSelectedQuote(null); setShowForm(true); setForm({customer:selectedQuote.customer,phone:selectedQuote.phone||"",item:selectedQuote.item,description:selectedQuote.description||"",quantity:String(selectedQuote.quantity||1),unitPrice:String(selectedQuote.unitPrice||0),validity:selectedQuote.validity||"30 days"}); }}> <Edit3 size={16}/> Edit</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
+
+      {printOpen && (
+        <PrintOptionsModal
+          title="Quotation printing"
+          close={() => setPrintOpen(false)}
+          options={[
+            ["Print quotation", "Clean customer-facing quotation", () => window.print()],
+            ["Print customer copy", "Print another copy for the customer file", () => window.print()],
+            ["Print internal copy", "Print a copy for workshop records", () => window.print()],
+          ]}
+        />
+      )}
+    </>
+  );
 }
 
 /* ============================================================
    SMART SEARCH / AI / PREVIEW / PRINT HELPERS
 ============================================================ */
 
-function AIHelpPanel({ page, totalPaid, outstanding, expenses = [], quotations = [], navigate, close }) {
-  const tips = page === "Billing" || page === "Transactions" || page === "Invoices" || page === "Payments"
-    ? [
-        ["Review outstanding", `There is ${money(outstanding)} still pending. Open Billing to review invoices.`, "Billing"],
-        ["Check transactions", "Review income, expenses and transfers in one ledger.", "Transactions"],
-        ["Record a payment", "Keep customer balances synchronized after every payment.", "Payments"],
-      ]
-    : page === "Reports"
-      ? [
-          ["Analyze expenses", `Current recorded expenses are ${money(expenses.reduce((a,b)=>a+Number(b.amount||0),0))}.`, "Expenses"],
-          ["Check collections", `Customer collections currently total ${money(totalPaid)}.`, "Billing"],
-          ["Export report", "Use Export CSV or Print Report from the Reports toolbar.", "Reports"],
-        ]
-      : [
-          ["Create a quotation", "Prepare an invoice-style estimate with VAT, validity and customer details.", "New Quotation"],
-          ["Review quotations", `${quotations.length} quotation${quotations.length===1?"":"s"} are saved on this device.`, "All Quotations"],
-          ["Open dashboard", "See collection, outstanding balances and financial activity at a glance.", "Dashboard"],
-        ];
-  return <div className="ai-panel">
-    <div className="ai-panel-head"><div><span><Sparkles size={14}/> AI WORKSPACE HELP</span><h3>Smart next steps</h3><p>Automated guidance based on the current screen and saved records.</p></div><button type="button" onClick={close}><X size={16}/></button></div>
-    <div className="ai-suggestions">{tips.map(([title,text,target],i)=><button type="button" key={title} onClick={()=>navigate(target)}><span className="ai-suggestion-number">0{i+1}</span><span><strong>{title}</strong><small>{text}</small></span><ArrowUpRight size={15}/></button>)}</div>
+function AIHelpPanel({ page, totalPaid, outstanding, expenses = [], quotations = [], jobs = [], customers = [], materials = [], navigate, close }) {
+  const [mode, setMode] = useState("actions");
+  const [prompt, setPrompt] = useState("");
+  const totalExpenses = expenses.reduce((a,b)=>a+Number(b.amount||0),0);
+  const lowStock = materials.filter(m=>Number(m.stock||0)<20).length;
+  const unpaid = jobs.filter(j=>Number(j.amount||0)>Number(j.paid||0)).length;
+  const cards = [
+    ["Cashflow health", `Collected ${money(totalPaid)} with ${money(outstanding)} still pending.`, "Reports", TrendingUp],
+    ["Unpaid invoices", `${unpaid} job invoice${unpaid===1?"":"s"} need collection follow-up.`, "Payments", AlertCircle],
+    ["Expense watch", `${money(totalExpenses)} recorded in expenses. Review your biggest costs.`, "Expenses", Wallet],
+    ["Low-stock check", `${lowStock} material${lowStock===1?"":"s"} are below the 20-unit watch level.`, "Materials", Package],
+    ["Customer insights", `${customers.length} customer profiles are available for review.`, "Customers", Users],
+    ["Quotation assistant", `${quotations.length} saved quotation${quotations.length===1?"":"s"}. Build or review estimates.`, "New Quotation", FileText],
+    ["Workshop workload", `${jobs.filter(j=>!['Completed','Delivered'].includes(j.status)).length} jobs are currently open.`, "Active Jobs", Wrench],
+    ["Daily finance", "Open the ledger to inspect income, expenses and transfers.", "Ledger", ArrowLeftRight],
+  ];
+  const answer = prompt.trim() ? `Based on the saved workshop records: ${prompt.toLowerCase().includes("sales") ? `total billed is ${money(jobs.reduce((a,b)=>a+Number(b.amount||0),0))}.` : prompt.toLowerCase().includes("customer") ? `${customers.length} customer profiles are currently available.` : prompt.toLowerCase().includes("stock") ? `${lowStock} materials are below the current low-stock threshold.` : `I can help you review billing, customers, stock, quotations, jobs and cash movement. Choose a shortcut below for a focused view.`}` : "Choose a workspace insight or type a question to get a quick operational summary.";
+  return <div className="ai-panel ai-panel-rich">
+    <div className="ai-panel-head"><div><span><Sparkles size={14}/> AI WORKSPACE</span><h3>Al Kanz Copilot</h3><p>Quick operational insights from your saved records.</p></div><button type="button" onClick={close}><X size={16}/></button></div>
+    <div className="ai-mode-tabs"><button className={mode==="actions"?"active":""} onClick={()=>setMode("actions")}>Smart actions</button><button className={mode==="ask"?"active":""} onClick={()=>setMode("ask")}>Ask assistant</button></div>
+    {mode==="ask" ? <div className="ai-ask"><div className="ai-answer"><Sparkles size={16}/><span>{answer}</span></div><div className="ai-input"><input value={prompt} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setMode("ask")} placeholder="Ask: sales, customers, stock, cashflow..."/><button type="button" onClick={()=>setPrompt(prompt.trim())}><ArrowUpRight size={16}/></button></div><div className="ai-chip-row">{["How are sales?","Who owes us?","Check stock","Review expenses"].map(x=><button key={x} onClick={()=>setPrompt(x)}>{x}</button>)}</div></div> : <div className="ai-suggestion-grid">{cards.map(([title,text,target,Icon])=><button type="button" key={title} onClick={()=>navigate(target)}><span className="ai-card-icon"><Icon size={16}/></span><span><strong>{title}</strong><small>{text}</small></span><ChevronRight size={14}/></button>)}</div>}
+    <div className="ai-panel-footer"><span><Sparkles size={12}/> Local workspace assistant</span><button onClick={()=>navigate("Dashboard")}>Open dashboard <ArrowUpRight size={13}/></button></div>
   </div>;
 }
 
@@ -3451,73 +3649,18 @@ function JobModal({ close, save }) {
 ============================================================ */
 
 function CustomerModal({ close, save }) {
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [location, setLocation] =
-    useState("");
-
-  return (
-    <Modal
-      title="Add Customer"
-      subtitle="Create a customer profile."
-      close={close}
-    >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-
-          if (!name) return;
-
-          save({
-            name,
-            phone,
-            location,
-          });
-        }}
-      >
-        <div className="modal-grid">
-          <Field
-            label="Customer name"
-            value={name}
-            onChange={setName}
-            placeholder="Full name"
-          />
-
-          <Field
-            label="Phone"
-            value={phone}
-            onChange={setPhone}
-            placeholder="+971 5X XXX XXXX"
-          />
-
-          <Field
-            label="Location"
-            value={location}
-            onChange={setLocation}
-            placeholder="City / Area"
-          />
-        </div>
-
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={close}
-          >
-            Cancel
-          </button>
-
-          <button
-            className="primary-button"
-            type="submit"
-          >
-            <Save size={16} />
-            Save Customer
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
+  const [form, setForm] = useState({name:"",phone:"",whatsapp:"",email:"",location:"",address:"",notes:""});
+  const update=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return <Modal title="Add Customer" subtitle="Create a complete customer profile for billing and workshop history." close={close}>
+    <form onSubmit={e=>{e.preventDefault();if(!form.name.trim())return;save({...form,name:form.name.trim(),whatsapp:form.whatsapp.trim()||form.phone.trim()});}}>
+      <div className="form-section-label"><span>CONTACT</span><small>Primary customer information</small></div>
+      <div className="modal-grid"><Field label="Customer name *" value={form.name} onChange={v=>update("name",v)} placeholder="Full name / company"/><Field label="Phone" value={form.phone} onChange={v=>update("phone",v)} placeholder="+971 5X XXX XXXX"/><Field label="WhatsApp" value={form.whatsapp} onChange={v=>update("whatsapp",v)} placeholder="+971 5X XXX XXXX"/><Field label="Email" value={form.email} onChange={v=>update("email",v)} placeholder="customer@email.com"/></div>
+      <div className="form-section-label"><span>ADDRESS</span><small>Useful for delivery and invoices</small></div>
+      <div className="modal-grid"><Field label="Location / City" value={form.location} onChange={v=>update("location",v)} placeholder="Dubai / Sharjah"/><Field label="Full address" value={form.address} onChange={v=>update("address",v)} placeholder="Area, building, street"/></div>
+      <label className="field"><span>Customer notes</span><textarea rows="3" value={form.notes} onChange={e=>update("notes",e.target.value)} placeholder="Preferences, measurements, delivery instructions..."/></label>
+      <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button className="primary-button" type="submit"><Save size={16}/>Save Customer</button></div>
+    </form>
+  </Modal>;
 }
 
 /* ============================================================
@@ -3652,43 +3795,16 @@ function MaterialModal({ close, save }) {
 ============================================================ */
 
 function SupplierModal({ close, save }) {
-  const [form, setForm] = useState({
-    name: "",
-    phone: "",
-    material: "Leather",
-    balance: "",
-  });
-
-  const submit = (e) => {
-    e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim()) {
-      alert("Please enter supplier name and phone number.");
-      return;
-    }
-    save({
-      ...form,
-      name: form.name.trim(),
-      phone: form.phone.trim(),
-      balance: Number(form.balance || 0),
-    });
-  };
-
-  return (
-    <Modal title="Add Supplier" subtitle="Add a material supplier to your workshop." close={close}>
-      <form onSubmit={submit}>
-        <div className="modal-grid">
-          <Field label="Supplier name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="Leather World" />
-          <Field label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="+971 50 000 0000" />
-          <SelectField label="Material" value={form.material} onChange={(v) => setForm({ ...form, material: v })} options={["Leather", "Fabric", "Foam", "Accessories", "Multiple Materials"]} />
-          <Field label="Balance" type="number" value={form.balance} onChange={(v) => setForm({ ...form, balance: v })} placeholder="AED 0" />
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="secondary-button" onClick={close}>Cancel</button>
-          <button type="submit" className="primary-button"><Save size={16} />Save Supplier</button>
-        </div>
-      </form>
-    </Modal>
-  );
+  const [form,setForm]=useState({name:"",phone:"",email:"",material:"Leather",balance:"",location:"",address:"",notes:""});
+  const update=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return <Modal title="Add Supplier" subtitle="Create a detailed supplier profile for procurement and payable tracking." close={close}><form onSubmit={e=>{e.preventDefault();if(!form.name.trim())return;save({...form,name:form.name.trim(),balance:Number(form.balance||0)});}}>
+    <div className="form-section-label"><span>SUPPLIER CONTACT</span><small>Contact and material details</small></div>
+    <div className="modal-grid"><Field label="Supplier name *" value={form.name} onChange={v=>update("name",v)} placeholder="Leather World"/><Field label="Phone" value={form.phone} onChange={v=>update("phone",v)} placeholder="+971 50 000 0000"/><Field label="Email" value={form.email} onChange={v=>update("email",v)} placeholder="sales@supplier.com"/><SelectField label="Material supplied" value={form.material} onChange={v=>update("material",v)} options={["Leather","Fabric","Foam","Accessories","Multiple Materials"]}/></div>
+    <div className="form-section-label"><span>ACCOUNT</span><small>Opening payable and address</small></div>
+    <div className="modal-grid"><Field label="Opening balance" type="number" value={form.balance} onChange={v=>update("balance",v)} placeholder="AED 0"/><Field label="Location / City" value={form.location} onChange={v=>update("location",v)} placeholder="Dubai"/><Field label="Full address" value={form.address} onChange={v=>update("address",v)} placeholder="Warehouse / office address"/></div>
+    <label className="field"><span>Supplier notes</span><textarea rows="3" value={form.notes} onChange={e=>update("notes",e.target.value)} placeholder="Payment terms, contact person, delivery notes..."/></label>
+    <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button type="submit" className="primary-button"><Save size={16}/>Save Supplier</button></div>
+  </form></Modal>;
 }
 
 /* ============================================================
@@ -5878,43 +5994,69 @@ button {
 
 /* THEMES + SIDEBAR COLLAPSE */
 .app.theme-light {
-  --bg:#f7f9fb; --white:#ffffff; --soft:#fbfcfd; --green:#176f62; --green-dark:#0e544a; --green-light:#e6f5f1;
-  --sidebar:#174b45; --sidebar-2:#216158; --text:#18272b; --text-2:#53666a; --muted:#8b989b; --border:#e2e8eb;
+  --bg:#f7f9fb; --white:#fff; --soft:#fbfcfd; --green:#176f62;
+  --green-dark:#0e544a; --green-light:#e6f5f1; --sidebar:#174b45;
+  --sidebar-2:#216158; --text:#18272b; --text-2:#53666a; --muted:#8b989b;
+  --border:#e2e8eb;
 }
-.app.theme-dark, .app.theme-night {
-  --bg:#080b0f; --white:#10151b; --soft:#0c1116; --green:#a98cff; --green-dark:#8068d8; --green-light:#1b1630;
-  --sidebar:#05070a; --sidebar-2:#0d1117; --sidebar-text:#aeb7c2; --text:#f4f5f7; --text-2:#b8c0ca; --muted:#7e8995; --border:#202833;
-  --blue:#72b7ff; --blue-light:#111e2b; --orange:#ffb86b; --orange-light:#2a1c10; --purple:#b99cff; --purple-light:#211a32;
-  --red:#ff8f8f; --red-light:#2b1719; --shadow:0 22px 55px rgba(0,0,0,.48);
+.app.theme-dark {
+  --bg:#111817; --white:#1a2422; --soft:#202b29; --green:#67c5a8;
+  --green-dark:#49a88e; --green-light:#1d3b34; --sidebar:#091f1c;
+  --sidebar-2:#123a34; --sidebar-text:#b6cbc6; --text:#edf5f2;
+  --text-2:#b3c3bf; --muted:#849692; --border:#30403d;
+  --blue:#78b5dc; --blue-light:#1c3443; --orange:#d6a15e;
+  --orange-light:#3c3020; --purple:#a98bd0; --purple-light:#302741;
+  --red:#e08b83; --red-light:#3c2927; --shadow:0 8px 30px rgba(0,0,0,.25);
 }
-.app.theme-dark, .app.theme-night { background:var(--bg); color:var(--text); }
-.app.theme-dark .topbar, .app.theme-night .topbar { background:rgba(8,11,15,.96); border-color:#1d252f; color:var(--text); }
-.app.theme-dark .card,.app.theme-dark .jobs-modern-card,.app.theme-dark .table-card,.app.theme-dark .modal,.app.theme-dark .job-drawer,.app.theme-dark .settings-card,.app.theme-dark .appearance-card,
-.app.theme-night .card,.app.theme-night .jobs-modern-card,.app.theme-night .table-card,.app.theme-night .modal,.app.theme-night .job-drawer,.app.theme-night .settings-card,.app.theme-night .appearance-card { background:#10151b; border-color:#202833; color:#f4f5f7; box-shadow:var(--shadow); }
-.app.theme-dark input,.app.theme-dark select,.app.theme-dark textarea,.app.theme-night input,.app.theme-night select,.app.theme-night textarea,
-.app.theme-dark .global-search,.app.theme-dark .jobs-search-modern,.app.theme-dark .jobs-status-filter,.app.theme-night .global-search,.app.theme-night .jobs-search-modern,.app.theme-night .jobs-status-filter { background:#090d12 !important; color:#f4f5f7 !important; border-color:#27313d !important; }
-.app.theme-dark .field input:focus,.app.theme-dark .field select:focus,.app.theme-dark textarea:focus,.app.theme-night .field input:focus,.app.theme-night .field select:focus,.app.theme-night textarea:focus { border-color:#a98cff !important; box-shadow:0 0 0 3px rgba(169,140,255,.12); }
-.app.theme-dark .page-title h1,.app.theme-dark .card h2,.app.theme-dark .card h3,.app.theme-night .page-title h1,.app.theme-night .card h2,.app.theme-night .card h3 { color:#f4f5f7; }
-.app.theme-dark .page-title p,.app.theme-dark .card-header p,.app.theme-night .page-title p,.app.theme-night .card-header p { color:#7e8995; }
-.app.theme-dark .table-head,.app.theme-night .table-head { background:#0b1015; color:#7e8995; border-color:#202833; }
-.app.theme-dark .table-row,.app.theme-night .table-row { border-color:#202833; color:#dce1e6; }
-.app.theme-dark .table-row:hover,.app.theme-night .table-row:hover { background:#151b23; }
-.app.theme-dark .secondary-button,.app.theme-night .secondary-button { background:#141a21; color:#e6e9ed; border-color:#29333f; }
-.app.theme-dark .secondary-button:hover,.app.theme-night .secondary-button:hover { background:#1a222c; border-color:#3b4654; }
-.app.theme-dark .mobile-menu,.app.theme-night .mobile-menu { color:#aeb7c2; }
-.app.theme-dark .mobile-menu:hover,.app.theme-night .mobile-menu:hover { background:#151b23; }
-.app.theme-dark .theme-toggle-button,.app.theme-night .theme-toggle-button { background:#15121f; color:#d7caff; border-color:#32284d; }
+.app.theme-dark .topbar { background:rgba(26,36,34,.94); }
+.app.theme-dark .card,.app.theme-dark .jobs-modern-card,.app.theme-dark .table-card,
+.app.theme-dark .modal,.app.theme-dark .job-drawer,.app.theme-dark .settings-card,
+.app.theme-dark .appearance-card { background:var(--white); border-color:var(--border); color:var(--text); }
+.app.theme-dark .global-search,.app.theme-dark .jobs-search-modern,.app.theme-dark .jobs-status-filter,
+.app.theme-dark .field input,.app.theme-dark .field select,.app.theme-dark .settings-form input {
+  background:#202b29; color:var(--text); border-color:var(--border);
+}
+.app.theme-dark .jobs-page-header h1,.app.theme-dark .jobs-breadcrumb strong,
+.app.theme-dark .card h2,.app.theme-dark .page-title h1 { color:var(--text); }
+.app.theme-dark .jobs-page-header p,.app.theme-dark .jobs-eyebrow,
+.app.theme-dark .jobs-breadcrumb,.app.theme-dark .card-header p,.app.theme-dark .page-title p { color:var(--muted); }
 
 .sidebar-overlay { display:none; }
 .mobile-menu { width:38px;height:38px;display:grid;place-items:center;border-radius:9px;background:transparent;color:#667c80; }
 .mobile-menu:hover { background:#eef4f4; }
-@media(min-width:851px) { .sidebar-collapsed .sidebar { width:78px; } .sidebar-collapsed .main { width:calc(100% - 78px); margin-left:78px; } .sidebar-collapsed .brand-area { padding-left:17px; padding-right:17px; } .sidebar-collapsed .brand > div:last-child,.sidebar-collapsed .workshop-status,.sidebar-collapsed .nav-section-title,.sidebar-collapsed .nav-item > span,.sidebar-collapsed .nav-item > svg:last-child,.sidebar-collapsed .sub-menu,.sidebar-collapsed .account-card > div:not(.account-avatar),.sidebar-collapsed .account-card > svg,.sidebar-collapsed .logout { display:none; } .sidebar-collapsed .brand { justify-content:center; } .sidebar-collapsed .nav-scroll { padding-left:10px;padding-right:10px; } .sidebar-collapsed .nav-item { justify-content:center;padding:0; } .sidebar-collapsed .sidebar-account { padding:12px 10px; } .sidebar-collapsed .account-card { justify-content:center; } }
+
+@media(min-width:851px) {
+  .sidebar-collapsed .sidebar { width:78px; }
+  .sidebar-collapsed .main { width:calc(100% - 78px); margin-left:78px; }
+  .sidebar-collapsed .brand-area { padding-left:17px; padding-right:17px; }
+  .sidebar-collapsed .brand > div:last-child,.sidebar-collapsed .workshop-status,
+  .sidebar-collapsed .nav-section-title,.sidebar-collapsed .nav-item > span,
+  .sidebar-collapsed .nav-item > svg:last-child,.sidebar-collapsed .sub-menu,
+  .sidebar-collapsed .account-card > div:not(.account-avatar),
+  .sidebar-collapsed .account-card > svg,.sidebar-collapsed .logout { display:none; }
+  .sidebar-collapsed .brand { justify-content:center; }
+  .sidebar-collapsed .nav-scroll { padding-left:10px;padding-right:10px; }
+  .sidebar-collapsed .nav-item { justify-content:center;padding:0; }
+  .sidebar-collapsed .sidebar-account { padding:12px 10px; }
+  .sidebar-collapsed .account-card { justify-content:center; }
+}
 .theme-options { display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:0 25px 25px; }
 .theme-option { min-height:84px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--soft);color:var(--text);display:flex;align-items:center;gap:11px;text-align:left;transition:.2s; }
-.theme-option:hover { border-color:var(--green);transform:translateY(-1px); } .theme-option.active { border-color:var(--green);box-shadow:0 0 0 2px var(--green-light); } .theme-option > div { flex:1; } .theme-option strong,.theme-option small { display:block; } .theme-option strong { font-size:12px; } .theme-option small { margin-top:3px;color:var(--muted);font-size:10px; }
-.theme-preview { width:38px;height:38px;flex:0 0 38px;border-radius:9px;border:1px solid var(--border); } .theme-preview-default { background:linear-gradient(135deg,#0d3d37 0 50%,#b9df79 50%); } .theme-preview-light { background:linear-gradient(135deg,#fff 0 50%,#e6f5f1 50%); } .theme-preview-dark { background:linear-gradient(135deg,#080b0f 0 50%,#a98cff 50%); }
-@media(max-width:850px) { .sidebar-overlay { display:block;position:fixed;inset:0;z-index:45;border:0;background:rgba(0,0,0,.35); } .sidebar { width:250px; } .theme-options { grid-template-columns:1fr; } }
-
+.theme-option:hover { border-color:var(--green);transform:translateY(-1px); }
+.theme-option.active { border-color:var(--green);box-shadow:0 0 0 2px var(--green-light); }
+.theme-option > div { flex:1; }
+.theme-option strong,.theme-option small { display:block; }
+.theme-option strong { font-size:12px; }
+.theme-option small { margin-top:3px;color:var(--muted);font-size:10px; }
+.theme-preview { width:38px;height:38px;flex:0 0 38px;border-radius:9px;border:1px solid var(--border); }
+.theme-preview-default { background:linear-gradient(135deg,#0d3d37 0 50%,#b9df79 50%); }
+.theme-preview-light { background:linear-gradient(135deg,#fff 0 50%,#e6f5f1 50%); }
+.theme-preview-dark { background:linear-gradient(135deg,#091f1c 0 50%,#67c5a8 50%); }
+@media(max-width:850px) {
+  .sidebar-overlay { display:block;position:fixed;inset:0;z-index:45;border:0;background:rgba(0,0,0,.35); }
+  .sidebar { width:250px; }
+  .theme-options { grid-template-columns:1fr; }
+}
 
 `;
 
@@ -6681,49 +6823,7 @@ button:active {
 }
 `;
 
-
-const AL_KANZ_PRO_UI = `
-.customer-command-grid,.dashboard-insight-grid,.report-insight-strip{display:grid;gap:14px;grid-template-columns:repeat(4,1fr);margin-bottom:18px}.customer-command-card,.report-insight{padding:20px;border:1px solid var(--border);border-radius:18px;background:var(--white);box-shadow:var(--shadow);transition:.25s}.customer-command-card:hover,.report-insight:hover{transform:translateY(-3px)}.customer-command-card span,.report-insight span{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.13em}.customer-command-card strong,.report-insight strong{display:block;margin-top:9px;font-size:25px;letter-spacing:-.04em;color:var(--text)}.customer-command-card small,.report-insight small{display:block;margin-top:5px;color:var(--muted);font-size:10px}.customer-command-card.warning strong{color:var(--orange)}.customer-command-card.success strong{color:var(--green)}.customer-workspace-grid{display:grid;grid-template-columns:1.45fr .8fr;gap:18px;margin-bottom:18px}.customer-insight-card,.customer-action-card{padding:22px}.customer-insight-list{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:15px 0 20px}.customer-insight-list>div{padding:13px;border:1px solid var(--border);border-radius:13px;background:var(--soft)}.customer-insight-list span{display:flex;gap:6px;align-items:center;font-size:10px;color:var(--muted)}.customer-insight-list strong{display:block;margin-top:8px;font-size:19px}.customer-ranking-title{display:flex;justify-content:space-between;color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.12em;margin-bottom:9px}.customer-ranking-title small{font-weight:500;letter-spacing:0}.customer-ranking-row{display:grid;grid-template-columns:24px 150px 1fr 25px;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--border);font-size:11px}.customer-ranking-row b{font-size:10px;color:var(--muted)}.customer-ranking-row i{height:5px;border-radius:99px;background:linear-gradient(90deg,var(--green),#8dd7c4);display:block}.customer-ranking-row strong{text-align:right}.customer-action-card button{width:100%;display:flex;align-items:center;gap:11px;padding:13px 2px;background:transparent;color:var(--text);border-bottom:1px solid var(--border);text-align:left}.customer-action-card button:last-child{border-bottom:0}.customer-action-card button>span{flex:1}.customer-action-card button b,.customer-action-card button small{display:block}.customer-action-card button small{margin-top:3px;color:var(--muted);font-size:10px}.customer-filter-tabs{display:flex;gap:7px;margin:8px 0 14px}.customer-filter-tabs button{border:1px solid var(--border);background:var(--soft);color:var(--muted);border-radius:99px;padding:8px 13px;font-size:10px;font-weight:800}.customer-filter-tabs button span{margin-left:5px}.customer-filter-tabs button.active{background:var(--green-light);color:var(--green);border-color:var(--green)}.customer-card-pro{transition:.25s}.customer-card-pro:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(20,53,57,.1)}.customer-health{margin-left:auto;margin-right:5px;font-size:9px;color:var(--muted);display:flex;align-items:center;gap:5px}.customer-health span{width:6px;height:6px;border-radius:50%;display:inline-block}.customer-health .healthy{background:#70c99f;box-shadow:0 0 0 4px rgba(112,201,159,.1)}.customer-health .needs-attention{background:#efaa60;box-shadow:0 0 0 4px rgba(239,170,96,.1)}.customer-card-tags{display:flex;gap:7px;margin-top:13px}.customer-card-tags span{display:flex;align-items:center;gap:4px;padding:6px 8px;border-radius:8px;background:var(--soft);color:var(--muted);font-size:9px}.customer-card-footer{display:flex;justify-content:space-between;align-items:center;margin-top:15px;padding-top:12px;border-top:1px solid var(--border)}.customer-card-footer button{background:transparent;color:var(--green);font-weight:800;font-size:10px;display:flex;align-items:center;gap:5px}.dashboard-insight-grid{grid-template-columns:1fr 1fr}.dashboard-insight-card{padding:21px}.checklist-row{display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border)}.checklist-row>span{width:28px;height:28px;display:grid;place-items:center;border-radius:9px;background:var(--soft);color:var(--muted)}.checklist-row .check-ok{color:var(--green);background:var(--green-light)}.checklist-row b,.checklist-row small{display:block}.checklist-row small{margin-top:3px;color:var(--muted);font-size:9px}.checklist-row strong{font-size:11px}.signal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.signal-grid>div{padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--soft)}.signal-grid span,.signal-grid b{display:block}.signal-grid span{color:var(--muted);font-size:10px}.signal-grid b{font-size:19px;margin:5px 0}.signal-grid i{display:block;height:5px;background:linear-gradient(90deg,var(--green),#8dd7c4);border-radius:99px}.report-insight-strip{grid-template-columns:repeat(4,1fr)}.report-insight strong{font-size:23px}.quote-builder-shell{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(390px,.8fr);gap:18px;align-items:start}.quote-builder-form,.quote-live-preview{padding:0;overflow:hidden}.quote-builder-top{padding:24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:15px}.quote-builder-top h2{margin:5px 0 4px;font-size:21px}.quote-builder-top p{color:var(--muted);font-size:11px}.quote-draft-pill{height:max-content;padding:7px 10px;border-radius:99px;background:var(--green-light);color:var(--green);font-size:9px;font-weight:900}.quote-section{padding:22px;border-bottom:1px solid var(--border)}.quote-section-title{display:flex;align-items:center;gap:10px;margin-bottom:16px}.quote-section-title>span{width:27px;height:27px;border-radius:8px;background:var(--soft);display:grid;place-items:center;font-size:9px;font-weight:900;color:var(--muted)}.quote-section-title>div{flex:1}.quote-section-title b,.quote-section-title small{display:block}.quote-section-title small{margin-top:3px;color:var(--muted);font-size:9px}.quote-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.quote-fields label{display:block;color:var(--muted);font-size:9px;font-weight:800}.quote-fields input,.quote-fields select,.quote-fields textarea{width:100%;margin-top:6px;border:1px solid var(--border);border-radius:10px;background:var(--soft);padding:10px 11px;color:var(--text);outline:0}.quote-fields .full-field{grid-column:1/-1}.quote-line-table{overflow-x:auto;border:1px solid var(--border);border-radius:12px}.quote-line-head,.quote-line{min-width:760px;display:grid;grid-template-columns:1.25fr 1.4fr 70px 110px 105px 35px;gap:8px;align-items:center;padding:10px}.quote-line-head{background:var(--soft);font-size:8px;font-weight:900;color:var(--muted)}.quote-line{border-top:1px solid var(--border)}.quote-line input{width:100%;min-width:0;padding:9px;border:1px solid var(--border);background:var(--soft);border-radius:8px;color:var(--text)}.quote-line strong{text-align:right;font-size:11px}.quote-remove{width:30px;height:30px;border-radius:8px;background:transparent;color:var(--muted)}.quote-remove:hover{background:var(--red-light);color:var(--red)}.quote-ai-panel{margin:18px 22px;padding:16px;border-radius:15px;border:1px solid rgba(169,140,255,.25);background:linear-gradient(135deg,rgba(169,140,255,.08),rgba(113,183,255,.05))}.quote-ai-title{display:flex;align-items:center;gap:10px}.quote-ai-title>div:nth-child(2){flex:1}.quote-ai-title b,.quote-ai-title small{display:block}.quote-ai-title small{margin-top:3px;color:var(--muted);font-size:9px}.ai-orb{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:var(--purple-light);color:var(--purple)}.quote-ai-chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.quote-ai-chips button{padding:7px 10px;border-radius:99px;border:1px solid var(--border);background:var(--soft);color:var(--text);font-size:9px}.quote-ai-result{display:flex;gap:8px;margin-top:12px;padding:11px;border-radius:10px;background:var(--soft);color:var(--text);font-size:10px;line-height:1.5}.quote-save-bar{display:flex;align-items:center;gap:8px;padding:15px 22px;background:var(--soft);border-top:1px solid var(--border)}.quote-save-bar>div{margin-right:auto}.quote-save-bar small,.quote-save-bar strong{display:block}.quote-save-bar small{font-size:8px;color:var(--muted);font-weight:900}.quote-save-bar strong{font-size:20px}.quote-live-preview{position:sticky;top:82px;background:#0f141a}.quote-preview-head{padding:15px 18px;display:flex;justify-content:space-between;border-bottom:1px solid var(--border);font-size:9px;letter-spacing:.12em}.quote-preview-head span{color:var(--muted);font-weight:900}.quote-preview-head b{color:var(--green)}.quote-paper{margin:18px;background:#fff;color:#18272b;border-radius:8px;padding:23px;box-shadow:0 20px 50px rgba(0,0,0,.25)}.quote-paper-brand{display:flex;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid #dfe5e5}.quote-paper-brand strong,.quote-paper-brand small{display:block}.quote-paper-brand strong{font-size:16px;letter-spacing:.08em}.quote-paper-brand small{font-size:7px;letter-spacing:.2em;color:#879597}.quote-paper-brand>b{font-size:9px;letter-spacing:.14em;color:#9b6b3b}.quote-paper-meta{display:flex;justify-content:space-between;padding:16px 0;border-bottom:1px solid #e5e9e9}.quote-paper-meta span{font-size:7px;color:#8b989b;letter-spacing:.1em}.quote-paper-meta b,.quote-paper-meta small{display:block;color:#263437;margin-top:4px;letter-spacing:0}.quote-paper-meta b{font-size:10px}.quote-paper-meta small{font-size:8px}.quote-paper-items>div{display:grid;grid-template-columns:1fr 35px 80px;gap:6px;padding:10px 0;border-bottom:1px solid #edf0f0;font-size:8px}.quote-paper-items>div:first-child{color:#8b989b;font-weight:900;font-size:7px}.quote-paper-items b,.quote-paper-items small{display:block}.quote-paper-items b{font-size:9px;color:#243235}.quote-paper-items small{font-size:7px;color:#8b989b;margin-top:3px}.quote-paper-items strong{text-align:right}.quote-paper-total{margin:15px 0 0 auto;width:72%;font-size:8px}.quote-paper-total span,.quote-paper-total>strong{display:flex;justify-content:space-between;padding:5px 0}.quote-paper-total>strong{border-top:1px solid #dce2e2;margin-top:5px;padding-top:10px;font-size:10px}.quote-paper-terms{border-top:1px solid #e2e6e6;margin-top:15px;padding-top:12px}.quote-paper-terms b,.quote-paper-terms span{display:block}.quote-paper-terms b{font-size:7px;text-transform:uppercase;color:#8b989b;margin-top:7px}.quote-paper-terms span{font-size:8px;line-height:1.45;margin-top:3px}.quotation-list-shell{margin-top:6px}.quotation-list-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.quotation-list-toolbar span,.quotation-list-toolbar strong{display:block}.quotation-list-toolbar span{font-size:9px;color:var(--muted);font-weight:900;letter-spacing:.13em}.quotation-list-toolbar strong{font-size:15px;margin-top:3px}.app.theme-dark .quote-live-preview,.app.theme-night .quote-live-preview{background:#0b1015;border-color:#202833}.app.theme-dark .quote-paper,.app.theme-night .quote-paper{background:#111820;color:#eef2f5;box-shadow:none}.app.theme-dark .quote-paper-brand,.app.theme-night .quote-paper-brand,.app.theme-dark .quote-paper-meta,.app.theme-night .quote-paper-meta,.app.theme-dark .quote-paper-items>div,.app.theme-night .quote-paper-items>div,.app.theme-dark .quote-paper-total>strong,.app.theme-night .quote-paper-total>strong,.app.theme-dark .quote-paper-terms,.app.theme-night .quote-paper-terms{border-color:#27323d}.app.theme-dark .quote-paper-meta b,.app.theme-dark .quote-paper-items b,.app.theme-dark .quote-paper-brand strong,.app.theme-night .quote-paper-meta b,.app.theme-night .quote-paper-items b,.app.theme-night .quote-paper-brand strong{color:#eef2f5}.app.theme-dark .quote-paper-meta small,.app.theme-dark .quote-paper-items small,.app.theme-night .quote-paper-meta small,.app.theme-night .quote-paper-items small{color:#7e8995}
-@media(max-width:1100px){.quote-builder-shell{grid-template-columns:1fr}.quote-live-preview{position:static}.customer-command-grid,.report-insight-strip{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.customer-workspace-grid,.dashboard-insight-grid{grid-template-columns:1fr}.customer-insight-list,.quote-fields{grid-template-columns:1fr}.customer-ranking-row{grid-template-columns:24px 110px 1fr 25px}.quote-builder-top,.quote-save-bar{flex-wrap:wrap}.quote-save-bar>div{width:100%;margin-bottom:5px}.quote-ai-title{flex-wrap:wrap}.quote-ai-title .primary-button{width:100%}.customer-command-grid,.report-insight-strip{grid-template-columns:1fr 1fr}}
-`;
-
-const AL_KANZ_NIGHT_FINISH = `
-/* Full Night Cinema theme: no white cards and no green UI surfaces */
-.app.theme-dark,.app.theme-night{background:#07090d!important;color:#eef2f7!important}
-.app.theme-dark .main,.app.theme-night .main{background:#07090d!important}
-.app.theme-dark .content,.app.theme-night .content{background:radial-gradient(circle at 80% 0%,rgba(133,103,255,.07),transparent 30%),#07090d!important}
-.app.theme-dark .card,.app.theme-dark .table-card,.app.theme-dark .jobs-modern-card,.app.theme-dark .settings-card,.app.theme-dark .appearance-card,.app.theme-dark .modal,.app.theme-dark .job-drawer,.app.theme-night .card,.app.theme-night .table-card,.app.theme-night .jobs-modern-card,.app.theme-night .settings-card,.app.theme-night .appearance-card,.app.theme-night .modal,.app.theme-night .job-drawer{background:#0d1117!important;border:1px solid #1c2530!important;color:#eef2f7!important;box-shadow:0 22px 55px rgba(0,0,0,.42)!important}
-.app.theme-dark .soft,.app.theme-night .soft{background:#0a0e13!important}
-.app.theme-dark .stat,.app.theme-night .stat,.app.theme-dark .account-big-card,.app.theme-night .account-big-card,.app.theme-dark .report-box,.app.theme-night .report-box,.app.theme-dark .customer-command-card,.app.theme-night .customer-command-card,.app.theme-dark .report-insight,.app.theme-night .report-insight{background:#0d1117!important;border-color:#1c2530!important;color:#eef2f7!important}
-.app.theme-dark .stats,.app.theme-night .stats{background:transparent!important}
-.app.theme-dark .nav-item.selected,.app.theme-night .nav-item.selected{background:#171326!important;color:#f4efff!important;box-shadow:inset 3px 0 #a98cff!important}
-.app.theme-dark .nav-item:hover,.app.theme-night .nav-item:hover{background:#11161d!important;color:#fff!important}
-.app.theme-dark .workshop-status,.app.theme-night .workshop-status{background:#0d1218!important;border:1px solid #1d2731!important;color:#aeb7c2!important}
-.app.theme-dark .primary-button,.app.theme-night .primary-button{background:linear-gradient(135deg,#8e72ee,#b09aff)!important;color:#08070c!important;border-color:transparent!important;box-shadow:0 8px 24px rgba(145,113,240,.22)!important}
-.app.theme-dark .primary-button:hover,.app.theme-night .primary-button:hover{filter:brightness(1.08)}
-.app.theme-dark .secondary-button,.app.theme-night .secondary-button{background:#11161d!important;color:#dce2e9!important;border-color:#27313d!important}
-.app.theme-dark .dashboard-topline,.app.theme-night .dashboard-topline,.app.theme-dark .dashboard-hero,.app.theme-night .dashboard-hero{background:linear-gradient(135deg,#0d1117,#11101a)!important;border-color:#1d2631!important}
-.app.theme-dark .dashboard-topline h1,.app.theme-night .dashboard-topline h1,.app.theme-dark .dashboard-hero h1,.app.theme-night .dashboard-hero h1{color:#f5f7fa!important}
-.app.theme-dark .hero-pills span,.app.theme-night .hero-pills span,.app.theme-dark .command-metrics div,.app.theme-night .command-metrics div{background:#0b1016!important;border-color:#1d2731!important;color:#aeb7c2!important}
-.app.theme-dark .ring-progress,.app.theme-night .ring-progress{background:conic-gradient(#a98cff var(--progress),#20202b 0)!important}
-.app.theme-dark .mini-stat-progress,.app.theme-night .mini-stat-progress{background:#202630!important}.app.theme-dark .mini-stat-progress i,.app.theme-night .mini-stat-progress i{background:#a98cff!important}
-.app.theme-dark .chart-grid-line,.app.theme-night .chart-grid-line{stroke:#202832!important}.app.theme-dark .chart-area,.app.theme-night .chart-area{fill:rgba(169,140,255,.10)!important}.app.theme-dark .chart-line,.app.theme-night .chart-line{stroke:#a98cff!important}.app.theme-dark .chart-point,.app.theme-night .chart-point{fill:#a98cff!important}
-.app.theme-dark .donut-chart,.app.theme-night .donut-chart{filter:saturate(.7) brightness(.75)}
-.app.theme-dark .table-head,.app.theme-night .table-head{background:#090d12!important;color:#737f8b!important}.app.theme-dark .table-row,.app.theme-night .table-row{background:#0d1117!important;color:#dce2e9!important;border-color:#1c2530!important}.app.theme-dark .table-row:hover,.app.theme-night .table-row:hover{background:#141a22!important}
-.app.theme-dark .customer-card,.app.theme-night .customer-card,.app.theme-dark .material-card,.app.theme-night .material-card,.app.theme-dark .job-card,.app.theme-night .job-card{background:#0d1117!important;border-color:#1c2530!important;color:#eef2f7!important}
-.app.theme-dark .customer-card-tags span,.app.theme-night .customer-card-tags span,.app.theme-dark .customer-insight-list>div,.app.theme-night .customer-insight-list>div,.app.theme-dark .signal-grid>div,.app.theme-night .signal-grid>div,.app.theme-dark .checklist-row>span,.app.theme-night .checklist-row>span{background:#090e14!important;border-color:#1d2731!important}
-.app.theme-dark .customer-action-card button,.app.theme-night .customer-action-card button{background:transparent!important;color:#e6eaf0!important;border-color:#1c2530!important}
-.app.theme-dark .customer-filter-tabs button,.app.theme-night .customer-filter-tabs button{background:#0d1218!important;color:#8c98a5!important;border-color:#27313d!important}.app.theme-dark .customer-filter-tabs button.active,.app.theme-night .customer-filter-tabs button.active{background:#171326!important;color:#b6a4ff!important;border-color:#6551a4!important}
-.app.theme-dark .quote-builder-form,.app.theme-night .quote-builder-form,.app.theme-dark .quote-live-preview,.app.theme-night .quote-live-preview{background:#0d1117!important;border-color:#1c2530!important}.app.theme-dark .quote-section,.app.theme-night .quote-section,.app.theme-dark .quote-builder-top,.app.theme-night .quote-builder-top{border-color:#1c2530!important}.app.theme-dark .quote-line-head,.app.theme-night .quote-line-head,.app.theme-dark .quote-line,.app.theme-night .quote-line{background:#090e14!important;border-color:#1c2530!important}.app.theme-dark .quote-line input,.app.theme-night .quote-line input,.app.theme-dark .quote-fields input,.app.theme-night .quote-fields input,.app.theme-dark .quote-fields select,.app.theme-night .quote-fields select,.app.theme-dark .quote-fields textarea,.app.theme-night .quote-fields textarea{background:#070b10!important;border-color:#27313d!important;color:#edf1f5!important}.app.theme-dark .quote-ai-panel,.app.theme-night .quote-ai-panel{background:linear-gradient(135deg,#11101b,#0b1118)!important;border-color:#302752!important}.app.theme-dark .quote-ai-chips button,.app.theme-night .quote-ai-chips button{background:#0a0f15!important;color:#cbd2db!important;border-color:#27313d!important}.app.theme-dark .quote-ai-result,.app.theme-night .quote-ai-result{background:#090e14!important;color:#dce2e9!important}.app.theme-dark .quote-save-bar,.app.theme-night .quote-save-bar{background:#090e14!important;border-color:#1c2530!important}
-.app.theme-dark .theme-option,.app.theme-night .theme-option{background:#0d1117!important;border-color:#27313d!important;color:#eef2f7!important}.app.theme-dark .theme-option.active,.app.theme-night .theme-option.active{border-color:#7560b4!important;box-shadow:0 0 0 2px rgba(169,140,255,.10)!important}
-.app.theme-dark .notification-popover,.app.theme-night .notification-popover,.app.theme-dark .admin-dropdown,.app.theme-night .admin-dropdown,.app.theme-dark .search-results,.app.theme-night .search-results{background:#0d1117!important;border-color:#1c2530!important;color:#eef2f7!important}
-.app.theme-dark .modal-backdrop,.app.theme-night .modal-backdrop,.app.theme-dark .overlay,.app.theme-night .overlay{background:rgba(0,0,0,.78)!important;backdrop-filter:blur(8px)}
-.app.theme-dark .document-note,.app.theme-night .document-note{background:#090e14!important;border-color:#1c2530!important;color:#b8c1cb!important}
-.app.theme-dark .eyebrow,.app.theme-night .eyebrow{color:#9d8bea!important}
-@media(prefers-reduced-motion:no-preference){.app.theme-dark .card,.app.theme-night .card{animation:akNightIn .35s ease both}@keyframes akNightIn{from{opacity:.72;transform:translateY(5px)}to{opacity:1;transform:none}}}
-`;
-
-const CSS = BASE_CSS + AL_KANZ_JOB_UI + AL_KANZ_ANIMATED_UI + AL_KANZ_PRO_UI + AL_KANZ_NIGHT_FINISH;
+const CSS = BASE_CSS + AL_KANZ_JOB_UI + AL_KANZ_ANIMATED_UI;
 
 
 
@@ -7674,29 +7774,67 @@ body{background:var(--ak-bg)!important;color:var(--ak-ink)!important;font-family
 
 `;
 
-
-const AL_KANZ_UPGRADE_UI = `
+const BILLING_BUTTON_FIX_CSS = `
 /* ============================================================
-   AL KANZ UPHOLSTERY — VISUAL UPGRADE
+   BILLING BUILDER / PRINT / SHARE
 ============================================================ */
-.theme-toggle-button{height:38px;padding:0 11px;border:1px solid var(--border);border-radius:11px;background:var(--soft);color:var(--text);display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;transition:.25s;box-shadow:0 6px 18px rgba(0,0,0,.04)}
-.theme-toggle-button:hover{transform:translateY(-2px);border-color:var(--green);box-shadow:0 10px 24px rgba(23,111,98,.12)}
-.theme-toggle-button span{font-size:10px}
-.dashboard-fire{position:relative}
-.dashboard-hero{position:relative;overflow:hidden;border-radius:20px;padding:25px 26px;margin-bottom:18px;background:linear-gradient(135deg,var(--white),var(--soft));border:1px solid var(--border);box-shadow:var(--shadow)}
-.dashboard-hero:after{content:"";position:absolute;width:260px;height:260px;right:-90px;top:-120px;border-radius:50%;background:radial-gradient(circle,rgba(101,208,176,.16),transparent 68%);pointer-events:none}
-.dashboard-hero-copy{position:relative;z-index:1}.dashboard-hero h1{font-family:"Manrope",sans-serif;font-size:31px;letter-spacing:-.04em;margin:6px 0 6px;color:var(--text)}
-.dashboard-hero p{color:var(--text-2);font-size:13px;max-width:690px}.hero-actions{position:relative;z-index:2}.hero-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.hero-pills span{padding:7px 10px;border:1px solid var(--border);border-radius:999px;background:var(--soft);color:var(--text-2);font-size:10px;font-weight:800}.live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#55c997;box-shadow:0 0 0 4px rgba(85,201,151,.12);margin-right:5px}
-.glow-button{box-shadow:0 10px 26px rgba(23,111,98,.2)}
-.dashboard-command-grid{display:grid;grid-template-columns:2fr repeat(3,1fr);gap:14px;margin-bottom:16px}.command-card{min-height:178px;padding:19px;position:relative;overflow:hidden}.command-card-main{background:linear-gradient(135deg,var(--green-dark),var(--green));color:#fff;border-color:transparent}.command-card-main .command-card-glow{position:absolute;width:220px;height:220px;border-radius:50%;right:-70px;top:-95px;background:rgba(255,255,255,.12)}.command-label,.mini-stat-head{display:flex;justify-content:space-between;align-items:center;font-size:9px;font-weight:900;letter-spacing:.16em}.command-label b{font-size:8px;letter-spacing:.08em;padding:5px 7px;border-radius:999px;background:rgba(255,255,255,.14)}.command-main-row{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1;margin-top:16px}.command-main-row small{display:block;font-size:9px;opacity:.72;letter-spacing:.08em}.command-main-row strong{display:block;font:800 27px "Manrope",sans-serif;margin:3px 0}.command-main-row span{font-size:10px;opacity:.8}.ring-progress{width:86px;height:86px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(#fff var(--progress),rgba(255,255,255,.15) 0);position:relative}.ring-progress:after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--green)}.ring-progress div{position:relative;z-index:1;text-align:center}.ring-progress strong{font-size:17px;margin:0}.ring-progress small{display:block;font-size:8px}.command-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:15px;position:relative;z-index:1}.command-metrics div{border-top:1px solid rgba(255,255,255,.18);padding-top:9px}.command-metrics span,.command-metrics strong{display:block}.command-metrics span{font-size:8px;opacity:.65}.command-metrics strong{font-size:11px;margin-top:3px}.mini-stat-card{transition:.25s}.mini-stat-card:hover{transform:translateY(-3px)}.mini-stat-card strong{display:block;font:800 27px "Manrope",sans-serif;margin-top:19px}.mini-stat-card p{font-size:10px;color:var(--muted);margin-top:2px}.mini-stat-head{color:var(--muted)}.mini-icon{width:30px;height:30px;border-radius:9px;background:var(--green-light);color:var(--green);display:grid;place-items:center}.mini-icon.purple{background:var(--purple-light);color:var(--purple)}.mini-icon.orange{background:var(--orange-light);color:var(--orange)}.mini-stat-card button{display:flex;align-items:center;gap:4px;background:transparent;color:var(--green);font-size:10px;font-weight:800;margin-top:13px}.tiny-bars{height:30px;display:flex;align-items:end;gap:4px;margin-top:10px}.tiny-bars i{flex:1;border-radius:4px 4px 1px 1px;background:var(--green);opacity:.75}.mini-stat-progress{height:7px;background:var(--soft);border-radius:99px;overflow:hidden;margin-top:18px}.mini-stat-progress i{display:block;height:100%;background:linear-gradient(90deg,var(--purple),var(--green));border-radius:inherit}.stock-severity{display:flex;gap:5px;margin-top:19px}.stock-severity span{height:7px;flex:1;border-radius:999px;background:var(--orange)}.stock-severity span.empty{background:var(--soft)}
-.dashboard-analytics-grid{display:grid;grid-template-columns:1.65fr 1fr;gap:16px;margin-bottom:16px}.analytics-card{padding:20px}.chart-legend{display:flex;justify-content:space-between;align-items:center;margin:6px 0 5px;color:var(--muted);font-size:10px}.chart-legend span{display:flex;align-items:center;gap:6px}.legend-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block}.chart-legend strong{font-size:13px;color:var(--text)}.line-chart-wrap{height:240px}.line-chart{width:100%;height:210px;overflow:visible}.chart-grid-line{stroke:var(--border);stroke-width:1}.chart-area{fill:url(#akArea)}.chart-line{fill:none;stroke:var(--green);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.chart-point{fill:var(--white);stroke:var(--green);stroke-width:3}.chart-x-labels{display:grid;grid-template-columns:repeat(7,1fr);font-size:9px;color:var(--muted);text-align:center}.donut-layout{display:flex;align-items:center;justify-content:center;gap:30px;min-height:235px}.donut-chart{width:176px;height:176px;border-radius:50%;display:grid;place-items:center;position:relative;flex:0 0 176px}.donut-chart:after{content:"";position:absolute;inset:28px;border-radius:50%;background:var(--white)}.donut-chart div{position:relative;z-index:1;text-align:center}.donut-chart strong{display:block;font:800 23px "Manrope",sans-serif}.donut-chart span{font-size:9px;color:var(--muted)}.donut-legend{width:150px}.donut-legend>div{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);font-size:10px}.donut-legend span{display:flex;align-items:center;gap:7px;color:var(--text-2)}.legend-swatch{width:7px;height:7px;border-radius:50%;display:inline-block}.swatch-0{background:#176f62}.swatch-1{background:#4d86c7}.swatch-2{background:#9a68c4}.swatch-3{background:#d59a4b}
-.dashboard-bottom-grid{display:grid;grid-template-columns:1.65fr 1fr;gap:16px}.dashboard-insight-card{margin-top:16px;padding:19px 21px;display:grid;grid-template-columns:1.1fr 1.7fr auto;gap:22px;align-items:center}.insight-copy h2{font:800 18px "Manrope",sans-serif;margin:4px 0}.insight-copy p{font-size:10px;color:var(--muted)}.insight-bars{display:grid;gap:9px}.insight-bars>div>div{display:flex;justify-content:space-between;font-size:9px;margin-bottom:4px}.insight-bar{height:6px;background:var(--soft);border-radius:99px;display:block;overflow:hidden}.insight-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--green),#8fdcc5);border-radius:inherit}.quotation-ai-pro{border:1px solid var(--border);border-radius:15px;padding:14px;background:linear-gradient(135deg,var(--soft),var(--white));box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}.quotation-ai-head{display:flex;align-items:center;gap:10px}.quotation-ai-head>div:nth-child(2){flex:1}.quotation-ai-head strong,.quotation-ai-head small{display:block}.quotation-ai-head small{font-size:10px;color:var(--muted);margin-top:2px}.ai-orb{width:37px;height:37px;border-radius:12px;background:linear-gradient(135deg,var(--green),var(--purple));color:#fff;display:grid;place-items:center;box-shadow:0 8px 20px rgba(117,87,164,.18)}.quotation-ai-suggestions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.quotation-ai-suggestions button{padding:10px;border:1px solid var(--border);background:var(--white);border-radius:10px;text-align:left;color:var(--text);transition:.2s}.quotation-ai-suggestions button:hover{transform:translateY(-2px);border-color:var(--green)}.quotation-ai-suggestions span,.quotation-ai-suggestions small{display:block}.quotation-ai-suggestions span{font-size:10px;font-weight:900}.quotation-ai-suggestions small{font-size:9px;color:var(--muted);line-height:1.45;margin-top:4px}.quotation-ai-result{display:flex;gap:8px;margin-top:10px;padding:10px;border-radius:10px;background:var(--green-light);color:var(--text-2);font-size:10px;line-height:1.5}.quotation-ai-result p{margin:0}
-.app.theme-dark .global-search,.app.theme-night .global-search,.app.theme-dark .jobs-search-modern,.app.theme-night .jobs-search-modern,.app.theme-dark .jobs-status-filter,.app.theme-night .jobs-status-filter,.app.theme-dark .field input,.app.theme-night .field input,.app.theme-dark .field select,.app.theme-night .field select,.app.theme-dark textarea,.app.theme-night textarea,.app.theme-dark .settings-form input,.app.theme-night .settings-form input{background:#172127;color:var(--text);border-color:var(--border)}
-.app.theme-dark .content,.app.theme-night .content{background:transparent}.app.theme-dark .page-title h1,.app.theme-night .page-title h1,.app.theme-dark .card h2,.app.theme-night .card h2{color:var(--text)}.app.theme-dark .table-row:hover,.app.theme-night .table-row:hover{background:#18252b}.app.theme-dark .theme-toggle-button,.app.theme-night .theme-toggle-button{background:#172127;color:#f1f6f7}.app.theme-dark .quick-nav,.app.theme-night .quick-nav{background:#101a20;border-color:#26353d}.app.theme-dark .quick-nav-button,.app.theme-night .quick-nav-button{color:#a9bbc0}.app.theme-dark .quick-nav-button.active,.app.theme-night .quick-nav-button.active{background:#16372f;color:#73d7b7}
-@media(max-width:1050px){.dashboard-command-grid{grid-template-columns:1fr 1fr}.command-card-main{grid-column:1/-1}.dashboard-analytics-grid,.dashboard-bottom-grid{grid-template-columns:1fr}.dashboard-insight-card{grid-template-columns:1fr}.quotation-ai-suggestions{grid-template-columns:1fr}}
-@media(max-width:700px){.dashboard-hero{padding:18px}.dashboard-hero h1{font-size:24px}.hero-actions{margin-top:10px;flex-wrap:wrap}.dashboard-command-grid{grid-template-columns:1fr}.command-card-main{grid-column:auto}.donut-layout{flex-direction:column;gap:15px}.donut-legend{width:100%}.dashboard-stat-strip{grid-template-columns:1fr 1fr}.quotation-ai-head{align-items:flex-start;flex-wrap:wrap}.quotation-ai-head .primary-button{width:100%}.theme-toggle-button span{display:none}}
+.bill-builder-backdrop{align-items:center!important;z-index:1200}
+.bill-builder-modal{width:min(1120px,96vw);max-height:92vh;overflow:auto;background:var(--white);border:1px solid var(--border);border-radius:24px;box-shadow:0 30px 100px rgba(0,0,0,.25);animation:akModalIn .28s cubic-bezier(.2,.8,.2,1) both}
+.bill-builder-head{display:flex;justify-content:space-between;gap:20px;padding:24px 28px;border-bottom:1px solid var(--border)}
+.bill-builder-head h2{margin:5px 0;font-family:Manrope,sans-serif;color:var(--text)}
+.bill-builder-head p{margin:0;color:var(--muted);font-size:13px}
+.bill-builder-grid{display:grid;grid-template-columns:1.1fr .9fr}
+.bill-form-pane{padding:24px 28px;border-right:1px solid var(--border)}
+.bill-preview-pane{padding:24px;background:var(--soft)}
+.bill-section-title{display:flex;align-items:center;gap:11px;margin-bottom:13px}
+.bill-section-title>span{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:var(--green-light);color:var(--green);font-size:11px;font-weight:900}
+.bill-section-title strong,.bill-section-title small{display:block}
+.bill-section-title strong{font-size:14px}.bill-section-title small{font-size:11px;color:var(--muted);margin-top:2px}
+.bill-fields{display:grid;gap:12px;margin-bottom:16px}.bill-fields.two{grid-template-columns:1fr 1fr}.bill-fields.three{grid-template-columns:repeat(3,1fr)}
+.invoice-preview{background:var(--white);border:1px solid var(--border);border-radius:18px;padding:22px;box-shadow:0 12px 30px rgba(0,0,0,.06)}
+.invoice-brand,.invoice-preview-meta,.invoice-item-preview,.invoice-totals span,.invoice-totals>strong{display:flex;justify-content:space-between;align-items:flex-start}
+.invoice-brand{align-items:center;border-bottom:1px solid var(--border);padding-bottom:16px}
+.invoice-brand strong{display:block;font-family:Manrope,sans-serif;font-size:19px;letter-spacing:2px;color:var(--text)}
+.invoice-brand span{display:block;font-size:7px;letter-spacing:2.5px;color:var(--muted)}
+.invoice-brand>b{font-size:11px;letter-spacing:2px;color:var(--green)}
+.invoice-preview-meta{padding:18px 0;border-bottom:1px solid var(--border);gap:15px}
+.invoice-preview-meta small,.invoice-preview-meta span{display:block;color:var(--muted);font-size:9px}.invoice-preview-meta strong{display:block;margin:4px 0;font-size:12px;color:var(--text)}
+.invoice-item-preview{padding:18px 0;border-bottom:1px solid var(--border);gap:15px}.invoice-item-preview small,.invoice-item-preview span{display:block;color:var(--muted);font-size:9px}.invoice-item-preview strong{font-size:11px;color:var(--text)}
+.invoice-totals{padding:15px 0}.invoice-totals span,.invoice-totals>strong{font-size:10px;color:var(--text-2);padding:5px 0}.invoice-totals b{color:var(--text)}
+.invoice-totals>strong{border-top:1px solid var(--border);margin-top:5px;padding-top:12px;font-size:13px;color:var(--text)}.invoice-totals>strong b{font-size:17px;color:var(--green)}
+.invoice-note{margin-top:8px;padding:11px;border-radius:10px;background:var(--green-light);color:var(--text-2);font-size:9px;line-height:1.5}
+.bill-preview-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:14px}
+.post-print-backdrop{z-index:1300}.post-print-modal{width:min(650px,94vw);padding:28px;text-align:left}.post-print-icon{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:var(--green-light);color:var(--green);margin-bottom:14px}
+.post-print-modal h2{margin:4px 0 7px}.post-print-modal p{color:var(--muted);line-height:1.55}.post-print-recipient{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid var(--border);border-radius:13px;background:var(--soft);margin:16px 0}.post-print-recipient strong,.post-print-recipient span{display:block}.post-print-recipient span{font-size:11px;color:var(--muted);margin-top:3px}.customer-avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--green-light);color:var(--green);font-weight:900}
+.post-print-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.share-btn{min-height:42px;border:1px solid var(--border);border-radius:11px;background:var(--white);color:var(--text);display:inline-flex;align-items:center;justify-content:center;gap:7px;font-weight:800;cursor:pointer}.share-btn:hover{transform:translateY(-1px)}.share-btn.whatsapp{background:#eaf8ef;border-color:#c7ebd2;color:#168044}.share-btn.botim{background:#eef3ff;border-color:#d5def7;color:#3158a6}.post-print-footer{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}
+.print-invoice-sheet{display:none}
+@media(max-width:900px){.bill-builder-grid{grid-template-columns:1fr}.bill-form-pane{border-right:0;border-bottom:1px solid var(--border)}.bill-fields.two,.bill-fields.three{grid-template-columns:1fr}.post-print-actions{grid-template-columns:1fr 1fr}}
+@media print{
+  body.printing-invoice *{visibility:hidden!important}
+  body.printing-invoice .print-invoice-sheet,body.printing-invoice .print-invoice-sheet *{visibility:visible!important}
+  body.printing-invoice .print-invoice-sheet{display:block!important;position:absolute;left:0;top:0;width:100%;min-height:100vh;padding:45px;font-family:Arial,sans-serif;background:#fff;color:#111}
+  .print-sheet-brand{display:flex;justify-content:space-between;align-items:center}.print-sheet-brand strong{font-size:20px;letter-spacing:2px}.print-sheet-brand span{display:block;font-size:8px;letter-spacing:2px;color:#777}.print-sheet-brand b{font-size:13px;letter-spacing:2px}
+  .print-sheet-line{height:1px;background:#ddd;margin:25px 0}.print-sheet-meta{display:flex;justify-content:space-between;margin-bottom:35px}.print-sheet-meta small,.print-sheet-meta span{display:block;color:#777;font-size:10px}.print-sheet-meta strong{display:block;margin:5px 0;font-size:15px}
+  .print-sheet-item{display:flex;justify-content:space-between;border-top:1px solid #ddd;border-bottom:1px solid #ddd;padding:18px 0}.print-sheet-item span{display:block;color:#777;font-size:11px;margin-top:5px}.print-sheet-totals{width:300px;margin:25px 0 25px auto}.print-sheet-totals span,.print-sheet-totals>strong{display:flex;justify-content:space-between;padding:7px 0;font-size:11px}.print-sheet-totals>strong{border-top:2px solid #111;font-size:15px;padding-top:12px}.print-sheet-footer{border-top:1px solid #ddd;padding-top:20px;color:#777;font-size:10px;text-align:center}
+}
 `;
 
-const FINAL_CSS = CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX + AL_KANZ_FULL_MOTION_CSS + AL_KANZ_LIGHT_UI + AL_KANZ_UPGRADE_UI;
+
+const AL_KANZ_PREMIUM_CRM_REPORT_CSS = `
+/* ============================================================
+   PREMIUM CRM / REPORTS / AI POLISH
+============================================================ */
+.crm-toolbar{display:flex;justify-content:space-between;gap:14px;align-items:center;margin:0 0 18px}.crm-search{min-height:46px;flex:1;max-width:700px;display:flex;align-items:center;gap:10px;padding:0 14px;border:1px solid var(--border);background:var(--white);border-radius:13px;box-shadow:0 6px 18px rgba(20,50,45,.04)}.crm-search input{border:0;outline:0;background:transparent;flex:1;color:var(--text);font:inherit;font-size:12px}.crm-search span{font-size:9px;color:var(--muted);font-weight:800}.crm-toolbar-stats{display:flex;gap:9px}.crm-toolbar-stats span{padding:10px 12px;border:1px solid var(--border);background:var(--soft);border-radius:11px;color:var(--muted);font-size:9px}.crm-toolbar-stats strong{color:var(--text);font-size:11px;margin-right:3px}.customer-grid-premium{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}.customer-card-premium{position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease}.customer-card-premium:after{content:"";position:absolute;inset:auto -25px -50px auto;width:140px;height:140px;border-radius:50%;background:var(--green-light);opacity:.45;pointer-events:none}.customer-card-premium:hover,.supplier-premium-card:hover{transform:translateY(-3px);box-shadow:0 18px 40px rgba(23,62,55,.09)}.customer-avatar-large{width:48px;height:48px;font-size:14px}.customer-avatar-xl{width:62px;height:62px;font-size:18px}.customer-tier,.supplier-status{font-size:8px;font-weight:900;letter-spacing:.12em;padding:6px 8px;border-radius:999px;background:var(--green-light);color:var(--green);margin-left:auto;margin-right:8px}.customer-card-premium h3{margin-top:14px}.customer-contact-line{display:flex;gap:7px;align-items:center;color:var(--muted);font-size:10px;margin:7px 0}.customer-finance-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:16px 0;padding-top:13px;border-top:1px solid var(--border)}.customer-finance-grid div{min-width:0}.customer-finance-grid small,.supplier-finance small,.crm-kpis small,.crm-contact-grid small{display:block;color:var(--muted);font-size:7px;letter-spacing:.1em;font-weight:900}.customer-finance-grid strong,.supplier-finance strong{display:block;margin-top:5px;font-size:10px}.customer-card-actions{display:flex;gap:8px;position:relative;z-index:2}.customer-card-actions button{flex:1;justify-content:center}.full-width{width:100%;justify-content:center}.supplier-premium-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}.supplier-premium-card{background:var(--white);border:1px solid var(--border);border-radius:17px;padding:19px;transition:transform .22s ease,box-shadow .22s ease}.supplier-card-head{display:flex;align-items:center}.supplier-logo{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;background:var(--green-light);color:var(--green)}.supplier-logo-xl{width:62px;height:62px}.supplier-premium-card h3{margin:16px 0 4px}.supplier-premium-card p{margin:0;color:var(--muted);font-size:10px}.supplier-contact-stack{display:grid;gap:8px;margin:16px 0}.supplier-contact-stack span{display:flex;gap:7px;align-items:center;color:var(--muted);font-size:10px}.supplier-finance{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:14px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:14px}.crm-backdrop{z-index:1400}.crm-profile-modal{width:min(900px,95vw);max-height:90vh;overflow:auto;padding:28px;position:relative}.crm-profile-head{display:flex;gap:15px;align-items:center;padding-right:30px}.crm-profile-head h2{margin:4px 0}.crm-profile-head p{margin:0;color:var(--muted);font-size:11px}.crm-contact-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:22px 0}.crm-contact-grid>div{padding:12px;border:1px solid var(--border);background:var(--soft);border-radius:12px;min-width:0}.crm-contact-grid strong{display:block;margin-top:6px;font-size:10px;word-break:break-word}.crm-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}.crm-kpis>div{padding:14px;border:1px solid var(--border);border-radius:13px;background:var(--white)}.crm-kpis strong{display:block;margin-top:7px;font-size:14px}.crm-kpis .is-warning{background:rgba(245,179,79,.08);border-color:rgba(245,179,79,.3)}.crm-history-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.section-mini-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.section-mini-head strong{font-size:11px}.section-mini-head span{font-size:8px;color:var(--muted)}.crm-history-list{border:1px solid var(--border);border-radius:13px;overflow:hidden}.crm-history-list>div{display:flex;justify-content:space-between;gap:10px;padding:11px 13px;border-bottom:1px solid var(--border)}.crm-history-list>div:last-child{border-bottom:0}.crm-history-list span b,.crm-history-list span small{display:block}.crm-history-list span b{font-size:9px}.crm-history-list span small{font-size:8px;color:var(--muted);margin-top:3px}.crm-history-list>div>strong{font-size:10px;white-space:nowrap}.report-control-panel{display:flex;justify-content:space-between;gap:14px;align-items:center;margin-bottom:18px;padding:10px;border:1px solid var(--border);background:var(--white);border-radius:15px;box-shadow:0 8px 25px rgba(20,50,45,.04)}.report-view-tabs{display:flex;gap:4px;overflow:auto}.report-view-tabs button{border:0;background:transparent;padding:9px 11px;border-radius:9px;color:var(--muted);font-size:9px;font-weight:800;cursor:pointer;white-space:nowrap}.report-view-tabs button.active{background:var(--green-light);color:var(--green)}.report-filters{display:flex;gap:7px;align-items:center}.report-filters select{height:34px;border:1px solid var(--border);border-radius:8px;background:var(--soft);color:var(--text);padding:0 9px;font-size:9px}.report-grid-rich{grid-template-columns:repeat(6,1fr)}.reports-main-grid{display:grid;grid-template-columns:1.7fr .8fr;gap:16px;margin-top:16px}.report-chart-large{min-height:350px}.report-bars-large{height:250px!important}.report-bars-large .bar-wrap>strong{font-size:7px;color:var(--muted);margin-bottom:5px}.report-breakdown-card{padding-bottom:18px}.report-status-ring{width:150px;height:150px;margin:20px auto;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--green) 0 62%,var(--green-light) 62% 100%);position:relative}.report-status-ring:after{content:"";position:absolute;width:112px;height:112px;background:var(--white);border-radius:50%}.report-status-ring div{position:relative;z-index:1;text-align:center}.report-status-ring strong,.report-status-ring span{display:block}.report-status-ring strong{font-size:28px}.report-status-ring span{font-size:8px;color:var(--muted)}.status-breakdown{display:grid;gap:8px}.status-breakdown div{display:flex;justify-content:space-between;font-size:9px}.status-breakdown span{color:var(--muted)}.status-dot{width:7px;height:7px;display:inline-block;border-radius:50%;margin-right:5px;background:var(--green)}.status-dot.progress{opacity:.7}.status-dot.ready{opacity:.5}.status-dot.delivered{opacity:.35}.reports-bottom-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}.report-list{border-top:1px solid var(--border)}.report-list>div{display:flex;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}.report-list span strong,.report-list span small{display:block}.report-list span strong{font-size:9px}.report-list span small{font-size:8px;color:var(--muted);margin-top:3px}.report-list>div>strong{font-size:10px;white-space:nowrap}.ai-panel-rich{width:min(560px,calc(100vw - 32px))}.ai-mode-tabs{display:flex;gap:5px;padding:0 22px 12px;border-bottom:1px solid var(--border)}.ai-mode-tabs button{border:1px solid var(--border);background:var(--soft);border-radius:8px;padding:7px 10px;font-size:9px;font-weight:800;color:var(--muted);cursor:pointer}.ai-mode-tabs button.active{background:var(--green-light);color:var(--green);border-color:transparent}.ai-suggestion-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 22px}.ai-suggestion-grid button{display:flex;align-items:flex-start;gap:9px;text-align:left;padding:11px;border:1px solid var(--border);background:var(--white);border-radius:11px;color:var(--text);cursor:pointer}.ai-suggestion-grid button:hover{transform:translateY(-1px);border-color:var(--green);box-shadow:0 7px 18px rgba(20,80,60,.07)}.ai-card-icon{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--green-light);color:var(--green);flex:0 0 auto}.ai-suggestion-grid strong,.ai-suggestion-grid small{display:block}.ai-suggestion-grid strong{font-size:9px}.ai-suggestion-grid small{font-size:8px;line-height:1.4;color:var(--muted);margin-top:3px}.ai-ask{padding:14px 22px}.ai-answer{display:flex;gap:9px;padding:12px;border:1px solid var(--border);border-radius:11px;background:var(--soft);font-size:10px;line-height:1.5}.ai-input{display:flex;gap:7px;margin-top:10px}.ai-input input{flex:1;border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--white);color:var(--text);outline:0;font-size:10px}.ai-input button{width:40px;border:0;border-radius:10px;background:var(--green);color:white}.ai-chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.ai-chip-row button{border:1px solid var(--border);background:var(--white);border-radius:999px;padding:6px 9px;color:var(--muted);font-size:8px}.ai-panel-footer{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding:11px 22px;color:var(--muted);font-size:8px}.ai-panel-footer button{border:0;background:transparent;color:var(--green);font-size:8px;font-weight:800}.theme-dark .crm-search,.theme-dark .report-control-panel,.theme-dark .crm-profile-modal,.theme-dark .supplier-premium-card,.theme-dark .customer-card-premium,.theme-dark .ai-suggestion-grid button,.theme-dark .ai-input input{background:var(--white)}
+@media(max-width:1050px){.report-grid-rich{grid-template-columns:repeat(3,1fr)}.crm-contact-grid{grid-template-columns:repeat(2,1fr)}.report-control-panel{align-items:flex-start;flex-direction:column}.report-filters{flex-wrap:wrap}.reports-bottom-grid{grid-template-columns:1fr}.reports-main-grid{grid-template-columns:1fr}}
+@media(max-width:700px){.crm-toolbar,.crm-toolbar-stats{flex-direction:column;align-items:stretch}.crm-toolbar-stats{display:grid;grid-template-columns:1fr 1fr}.report-grid-rich{grid-template-columns:1fr 1fr}.crm-contact-grid,.crm-kpis,.crm-history-grid{grid-template-columns:1fr}.ai-suggestion-grid{grid-template-columns:1fr}.report-filters{width:100%}.report-filters select,.report-filters button{flex:1}.report-view-tabs{width:100%}.report-control-panel{padding:8px}.crm-profile-modal{padding:20px}.customer-finance-grid,.supplier-finance{grid-template-columns:1fr 1fr}}
+`;
+
+const AL_KANZ_CRM_DETAIL_CSS = `
+.form-section-label{display:flex;justify-content:space-between;align-items:center;margin:4px 0 11px;padding-top:4px}.form-section-label span{font-size:8px;font-weight:900;letter-spacing:.13em;color:var(--green)}.form-section-label small{font-size:8px;color:var(--muted)}
+.invoice-contact-card{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:18px}.invoice-contact-card>div{padding:10px;border:1px solid var(--border);background:var(--soft);border-radius:10px;min-width:0}.invoice-contact-card span{display:block;font-size:7px;color:var(--muted);font-weight:900;letter-spacing:.1em}.invoice-contact-card strong{display:block;margin-top:5px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.invoice-share-center{margin-top:15px;padding:14px;border:1px solid var(--border);border-radius:13px;background:var(--soft)}.share-center-head strong,.share-center-head small{display:block}.share-center-head strong{font-size:11px;margin:3px 0}.share-center-head small{font-size:8px;color:var(--muted);line-height:1.45}.invoice-share-center .post-print-actions{margin-top:10px;padding:0}.invoice-share-center .share-btn{background:var(--white)}
+.theme-dark .invoice-share-center .share-btn,.theme-dark .invoice-contact-card>div{background:var(--white)}
+@media(max-width:700px){.invoice-contact-card{grid-template-columns:1fr}.invoice-share-center .post-print-actions{grid-template-columns:1fr 1fr}}
+`;
+const FINAL_CSS = CSS + AL_KANZ_CRM_DETAIL_CSS + AL_KANZ_PREMIUM_CRM_REPORT_CSS + AL_KANZ_FINAL_RESPONSIVE + AL_KANZ_FINAL_FIX + AL_KANZ_LAST_FIX + AL_KANZ_TRUE_FINAL_FIX + AL_KANZ_FULL_MOTION_CSS + AL_KANZ_LIGHT_UI + BILLING_BUTTON_FIX_CSS;
 
 export default App;
