@@ -417,21 +417,21 @@ const INITIAL_STAFF = [
     id: 1,
     name: "Mohammed Afsal",
     role: "Master Upholsterer",
-    phone: "+971 50 456 7890",
+    phone: "+971 50 456 7890", email: "mohammed@alkanzupholstery.com", salary: 6500, salaryType: "Monthly", joiningDate: "2024-01-15", address: "Dubai, UAE", emergencyContact: "+971 50 111 2222", bank: "Emirates NBD", attendance: 96, performance: 94, notes: "Master upholstery and restoration specialist",
     status: "Active",
   },
   {
     id: 2,
     name: "Shameer",
     role: "Leather Technician",
-    phone: "+971 52 567 8901",
+    phone: "+971 52 567 8901", email: "shameer@alkanzupholstery.com", salary: 5200, salaryType: "Monthly", joiningDate: "2024-04-10", address: "Sharjah, UAE", emergencyContact: "+971 52 111 3333", bank: "ADCB", attendance: 93, performance: 89, notes: "Leather fitting and finishing",
     status: "Active",
   },
   {
     id: 3,
     name: "Riyas",
     role: "Stitching Specialist",
-    phone: "+971 55 678 9012",
+    phone: "+971 55 678 9012", email: "riyas@alkanzupholstery.com", salary: 4800, salaryType: "Monthly", joiningDate: "2025-01-06", address: "Ajman, UAE", emergencyContact: "+971 55 111 4444", bank: "FAB", attendance: 88, performance: 86, notes: "Stitching and custom seat covers",
     status: "On Leave",
   },
 ];
@@ -602,7 +602,11 @@ const mapSupplier = (row) => ({
 });
 
 const mapStaff = (row) => ({
-  id: row.id, name: row.name, role: row.role || "", phone: row.phone || "", status: row.status || "Active"
+  ...row,
+  id: row.id, name: row.name, role: row.role || "", phone: row.phone || "", email: row.email || "",
+  address: row.address || "", emergencyContact: row.emergencyContact || row.emergency_contact || "", bank: row.bank || "",
+  joiningDate: row.joiningDate || row.joining_date || "", salary: Number(row.salary || 0), salaryType: row.salaryType || row.salary_type || "Monthly",
+  attendance: Number(row.attendance || 0), performance: Number(row.performance || 0), notes: row.notes || "", status: row.status || "Active"
 });
 
 function App() {
@@ -891,10 +895,12 @@ const netCash = totalPaid - totalExpenses;
     if (hasSupabase) {
       try {
         const { error } = await supabase.from("staff").insert({
-          name: person.name,
-          role: person.role,
-          phone: person.phone,
-          status: person.status,
+          name: person.name, role: person.role, phone: person.phone, email: person.email || "",
+          address: person.address || "", emergencyContact: person.emergencyContact || "",
+          bank: person.bank || "", joiningDate: person.joiningDate || "",
+          salary: Number(person.salary || 0), salaryType: person.salaryType || "Monthly",
+          attendance: Number(person.attendance || 0), performance: Number(person.performance || 0),
+          notes: person.notes || "", status: person.status,
         });
         if (error) throw error;
       } catch (error) {
@@ -1375,6 +1381,8 @@ const netCash = totalPaid - totalExpenses;
                 totalPaid={totalPaid}
                 recordPayment={recordPayment}
                 customers={customers}
+                materials={materials}
+                quotations={quotations}
                 setJobs={setJobs}
                 setPayments={setPayments}
                 setTransactions={setTransactions}
@@ -2383,41 +2391,22 @@ function SuppliersPage({ suppliers = [], jobs = [], expenses = [], transactions 
 ============================================================ */
 
 function StaffPage({ staff, setStaff, setModal, setEntityPreview }) {
-  return (
-    <>
-      <PageTitle
-        eyebrow="TEAM"
-        title="Staff"
-        subtitle="Manage workshop employees and responsibilities."
-        button="Add Staff"
-        onClick={() => setModal("staff")}
-      />
-
-      <div className="staff-grid">
-        {staff.map((person) => (
-          <div className="staff-card" key={person.id}>
-            <div className="staff-avatar">
-              {person.name.split(" ").map((x) => x[0]).join("").slice(0, 2)}
-            </div>
-            <h3>{person.name}</h3>
-            <p>{person.role}</p>
-            <span>{person.phone}</span>
-            <div className="staff-card-footer">
-              <label className={person.status === "Active" ? "staff-active" : "staff-leave"}>{person.status}</label>
-              <button type="button" className="row-action" onClick={() => setEntityPreview?.({ type: "Staff", ...person })} title="View staff member"><Eye size={15}/></button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </>
-  );
+  const safeStaff=Array.isArray(staff)?staff:[];
+  const [selected,setSelected]=useState(null);
+  const payroll=safeStaff.reduce((a,p)=>a+Number(p.salary||0),0);
+  const avgPerformance=safeStaff.length?Math.round(safeStaff.reduce((a,p)=>a+Number(p.performance||0),0)/safeStaff.length):0;
+  return <><PageTitle eyebrow="TEAM · PAYROLL" title="Staff & Payroll" subtitle="Manage employee profiles, salaries, attendance and workshop performance." button="Add Staff" onClick={()=>setModal("staff")}/>
+    <div className="staff-summary-grid"><ReportBox icon={Users} title="Team" value={safeStaff.length} note="Total staff"/><ReportBox icon={Wallet} title="Payroll" value={money(payroll)} note="Monthly salary run"/><ReportBox icon={TrendingUp} title="Performance" value={`${avgPerformance}%`} note="Average performance"/><ReportBox icon={CheckCircle2} title="Active" value={safeStaff.filter(p=>p.status==="Active").length} note="Currently active"/></div>
+    <div className="staff-grid">{safeStaff.map(person=><button type="button" className="staff-card staff-card-button" key={person.id} onClick={()=>setSelected(person)}><div className="staff-avatar">{String(person.name||"S").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><h3>{person.name}</h3><p>{person.role}</p><span>{person.phone}</span><div className="staff-metrics"><span><small>SALARY</small><b>{money(person.salary||0)}</b></span><span><small>PERFORMANCE</small><b>{Number(person.performance||0)}%</b></span></div><div className="staff-progress"><i style={{width:`${Math.min(100,Number(person.performance||0))}%`}}/></div><div className="staff-card-footer"><label className={person.status === "Active" ? "staff-active" : "staff-leave"}>{person.status}</label><Eye size={15}/></div></button>)}</div>
+    {selected&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setSelected(null)}><div className="card staff-profile-modal"><button className="modal-close" onClick={()=>setSelected(null)}><X size={17}/></button><div className="crm-profile-head"><div className="staff-avatar staff-avatar-xl">{String(selected.name||"S").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><div><span className="eyebrow">EMPLOYEE PROFILE</span><h2>{selected.name}</h2><p>{selected.role} · {selected.status}</p></div></div><div className="crm-kpis"><div><small>SALARY</small><strong>{money(selected.salary||0)}</strong><span>{selected.salaryType||"Monthly"}</span></div><div><small>PERFORMANCE</small><strong>{Number(selected.performance||0)}%</strong><span>Current score</span></div><div><small>ATTENDANCE</small><strong>{Number(selected.attendance||0)}%</strong><span>Attendance</span></div><div><small>JOINED</small><strong>{selected.joiningDate||"—"}</strong><span>Joining date</span></div></div><div className="crm-contact-grid"><div><small>PHONE</small><strong>{selected.phone||"—"}</strong></div><div><small>EMAIL</small><strong>{selected.email||"—"}</strong></div><div><small>ADDRESS</small><strong>{selected.address||"—"}</strong></div><div><small>EMERGENCY</small><strong>{selected.emergencyContact||"—"}</strong></div><div><small>BANK</small><strong>{selected.bank||"—"}</strong></div><div><small>NOTES</small><strong>{selected.notes||"—"}</strong></div></div><div className="document-actions"><button className="secondary-button" onClick={()=>setSelected(null)}>Close</button></div></div></div>}
+  </>;
 }
 
 /* ============================================================
    BILLING
 ============================================================ */
 
-function BillingPage({ page, jobs, payments = [], transactions = [], outstanding, totalPaid, recordPayment, customers = [], setJobs, setPayments, setTransactions }) {
+function BillingPage({ page, jobs, payments = [], transactions = [], outstanding, totalPaid, recordPayment, customers = [], materials = [], quotations = [], setJobs, setPayments, setTransactions }) {
   // Defensive normalization: Appwrite/localStorage can briefly return null or a non-array
   // while data is loading. The billing UI must still render instead of becoming blank.
   const safeJobs = Array.isArray(jobs) ? jobs : [];
@@ -2440,32 +2429,25 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
   const [billRun, setBillRun] = useState(0);
   const [showBillBuilder, setShowBillBuilder] = useState(false);
   const [postPrintBill, setPostPrintBill] = useState(null);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [billForm, setBillForm] = useState({
-    customerId: "",
-    customer: "",
-    phone: "",
-    whatsapp: "",
-    email: "",
-    address: "",
-    item: "",
-    description: "",
-    quantity: "1",
-    unitPrice: "",
-    discount: "0",
-    vat: "5",
-    paid: "0",
-    paymentMethod: "Cash",
+    customerId: "", customer: "", phone: "", whatsapp: "", email: "", address: "",
+    items: [{ id: `item-${Date.now()}`, materialId: "", item: "", description: "", quantity: "1", unitPrice: "" }],
+    discount: "0", vat: "5", paid: "0", paymentMethod: "Cash", quotationId: "",
   });
 
   const collectedPercent = invoices.reduce((a, b) => a + b.amount, 0) > 0
     ? Math.min(100, (totalPaid / invoices.reduce((a, b) => a + b.amount, 0)) * 100)
     : 0;
 
-  const resetBillForm = () => setBillForm({
-    customerId: "", customer: "", phone: "", whatsapp: "", email: "", address: "",
-    item: "", description: "", quantity: "1", unitPrice: "", discount: "0",
-    vat: "5", paid: "0", paymentMethod: "Cash",
-  });
+  const resetBillForm = () => {
+    setCustomerSearch("");
+    setBillForm({
+      customerId: "", customer: "", phone: "", whatsapp: "", email: "", address: "",
+      items: [{ id: `item-${Date.now()}`, materialId: "", item: "", description: "", quantity: "1", unitPrice: "" }],
+      discount: "0", vat: "5", paid: "0", paymentMethod: "Cash", quotationId: "",
+    });
+  };
 
   const openBillBuilder = () => {
     resetBillForm();
@@ -2473,7 +2455,7 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
   };
 
   const selectBillCustomer = (id) => {
-    const c = customers.find((item) => String(item.id) === String(id));
+    const c = customers.find((item) => String(item.id || item.$id) === String(id));
     if (!c) {
       setBillForm((f) => ({ ...f, customerId: "", customer: "" }));
       return;
@@ -2489,13 +2471,29 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
     }));
   };
 
-  const subtotal = Math.max(0, Number(billForm.quantity || 0) * Number(billForm.unitPrice || 0));
+  const lineItems = (billForm.items || []).map((row) => ({
+    ...row,
+    quantity: Number(row.quantity || 0),
+    unitPrice: Number(row.unitPrice || 0),
+    amount: Math.max(0, Number(row.quantity || 0) * Number(row.unitPrice || 0)),
+  }));
+  const subtotal = lineItems.reduce((sum, row) => sum + row.amount, 0);
   const discountAmount = Math.min(subtotal, Math.max(0, Number(billForm.discount || 0)));
   const taxable = Math.max(0, subtotal - discountAmount);
   const vatAmount = taxable * (Number(billForm.vat || 0) / 100);
   const billTotal = taxable + vatAmount;
   const paidNow = Math.min(billTotal, Math.max(0, Number(billForm.paid || 0)));
   const billBalance = Math.max(0, billTotal - paidNow);
+
+  const updateBillItem = (itemId, key, value) => {
+    setBillForm((f) => ({ ...f, items: f.items.map((row) => row.id === itemId ? { ...row, [key]: value } : row) }));
+  };
+  const addBillItem = () => setBillForm((f) => ({ ...f, items: [...f.items, { id: `item-${Date.now()}-${Math.random()}`, materialId: "", item: "", description: "", quantity: "1", unitPrice: "" }] }));
+  const removeBillItem = (itemId) => setBillForm((f) => ({ ...f, items: f.items.length <= 1 ? f.items : f.items.filter((row) => row.id !== itemId) }));
+  const selectMaterial = (itemId, materialId) => {
+    const material = materials.find((m) => String(m.id || m.$id) === String(materialId));
+    setBillForm((f) => ({ ...f, items: f.items.map((row) => row.id === itemId ? { ...row, materialId: String(materialId || ""), item: material?.name || row.item, unitPrice: material ? String(material.price || 0) : row.unitPrice, description: material ? `${material.category || "Material"} · ${material.unit || "unit"}` : row.description } : row) }));
+  };
 
   const billMessage = (bill) => [
     "AL KANZ UPHOLSTERY",
@@ -2532,74 +2530,85 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
     }
   };
 
-  const createBill = (shouldPrint = false) => {
+  const createBill = async (shouldPrint = false) => {
     if (!billForm.customer.trim()) return alert("Please select or enter the customer name.");
-    if (!billForm.item.trim()) return alert("Please enter the upholstery item or service.");
+    if (!lineItems.some((item) => item.item.trim() && item.amount > 0)) return alert("Add at least one item with a quantity and unit price.");
     if (billTotal <= 0) return alert("Enter a unit price greater than 0.");
 
     const bill = {
       id: `INV-${String(Date.now()).slice(-7)}`,
-      customer: billForm.customer.trim(),
-      customerId: billForm.customerId || "",
-      phone: billForm.phone.trim(),
-      whatsapp: billForm.whatsapp.trim(),
-      email: billForm.email.trim(),
-      address: billForm.address.trim(),
-      item: billForm.item.trim(),
-      description: billForm.description.trim(),
-      quantity: Number(billForm.quantity || 1),
-      unitPrice: Number(billForm.unitPrice || 0),
-      discount: discountAmount,
-      vatRate: Number(billForm.vat || 0),
-      vat: vatAmount,
-      amount: billTotal,
-      total: billTotal,
-      paid: paidNow,
-      balance: billBalance,
-      paymentMethod: billForm.paymentMethod,
-      status: paidNow >= billTotal ? "Paid" : paidNow > 0 ? "Part Paid" : "Unpaid",
-      date: new Date().toISOString(),
-      work: billForm.description.trim() || "Upholstery service",
-      material: billForm.item.trim(),
-      progress: 0,
+      customer: billForm.customer.trim(), customerId: billForm.customerId || "",
+      phone: billForm.phone.trim(), whatsapp: billForm.whatsapp.trim(), email: billForm.email.trim(), address: billForm.address.trim(),
+      item: lineItems.filter((x) => x.item.trim()).map((x) => x.item.trim()).join(", "),
+      description: lineItems.filter((x) => x.description.trim()).map((x) => x.description.trim()).join(" · "),
+      items: lineItems.filter((x) => x.item.trim()), quantity: lineItems.reduce((sum, x) => sum + x.quantity, 0),
+      unitPrice: lineItems.length === 1 ? lineItems[0].unitPrice : 0, quotationId: billForm.quotationId || "",
+      discount: discountAmount, vatRate: Number(billForm.vat || 0), vat: vatAmount, amount: billTotal, total: billTotal,
+      paid: paidNow, balance: billBalance, paymentMethod: billForm.paymentMethod,
+      status: paidNow >= billTotal ? "Paid" : paidNow > 0 ? "Part Paid" : "Unpaid", date: new Date().toISOString(),
+      work: billForm.description.trim() || "Upholstery service", material: lineItems.map(x=>x.item).join(", "), progress: 0,
     };
 
+    // Optimistic UI update so the bill appears immediately. The same record is then
+    // persisted to the Appwrite-backed compatibility tables below.
     if (setJobs) setJobs((prev) => [bill, ...(Array.isArray(prev) ? prev : [])]);
-    if (setPayments && paidNow > 0) {
-      setPayments((prev) => [{
-        id: `PAY-${Date.now()}`,
-        bill_id: bill.id,
-        customer: bill.customer,
-        amount: paidNow,
-        payment_method: bill.paymentMethod,
-        paid_at: bill.date,
-      }, ...(Array.isArray(prev) ? prev : [])]);
-    }
-    if (setTransactions && paidNow > 0) {
-      setTransactions((prev) => [{
-        id: `TX-${Date.now()}`,
-        transaction_type: "Income",
-        description: `Invoice · ${bill.customer} · ${bill.id}`,
-        amount: paidNow,
-        account: bill.paymentMethod,
-        transaction_date: bill.date,
-      }, ...(Array.isArray(prev) ? prev : [])]);
+    if (setPayments && paidNow > 0) setPayments((prev) => [{ id:`PAY-${Date.now()}`, bill_id:bill.id, customer:bill.customer, amount:paidNow, payment_method:bill.paymentMethod, paid_at:bill.date }, ...(Array.isArray(prev)?prev:[])]);
+    if (setTransactions && paidNow > 0) setTransactions((prev) => [{ id:`TX-${Date.now()}`, transaction_type:"Income", description:`Invoice · ${bill.customer} · ${bill.id}`, amount:paidNow, account:bill.paymentMethod, transaction_date:bill.date }, ...(Array.isArray(prev)?prev:[])]);
+
+    if (hasSupabase) {
+      try {
+        let customerRow = null;
+        if (bill.customerId) {
+          const found = await supabase.from("customers").select("*").eq("id", bill.customerId).maybeSingle();
+          customerRow = found.data || null;
+        }
+        if (!customerRow && bill.phone) {
+          const found = await supabase.from("customers").select("*").eq("phone", bill.phone).maybeSingle();
+          customerRow = found.data || null;
+        }
+        if (!customerRow) {
+          const created = await supabase.from("customers").insert({
+            name: bill.customer, phone: bill.phone, whatsapp: bill.whatsapp, email: bill.email,
+            address: bill.address, location: bill.address || "Dubai", notes: "Created from billing", jobs_count: 0, outstanding: 0,
+          }).select("*").single();
+          if (created.error) throw created.error;
+          customerRow = created.data;
+        } else {
+          const updated = await supabase.from("customers").update({ name:bill.customer, phone:bill.phone || customerRow.phone, whatsapp:bill.whatsapp || customerRow.whatsapp || bill.phone, email:bill.email || customerRow.email, address:bill.address || customerRow.address, location:customerRow.location || "Dubai" }).eq("id", customerRow.id).select("*").maybeSingle();
+          if (updated.error) throw updated.error;
+          customerRow = updated.data || customerRow;
+        }
+        bill.customerId = customerRow.id || bill.customerId;
+
+        const jobSaved = await supabase.from("jobs").insert({
+          job_number: bill.id, customer_id: bill.customerId, customer_name: bill.customer, phone: bill.phone, item: bill.item,
+          description: bill.description, work: bill.work, material: bill.material, quantity: bill.quantity, amount: bill.total, paid: bill.paid,
+          discount: bill.discount, status: "Received", progress: 0, notes: `Invoice ${bill.id}${bill.quotationId ? ` · Quotation ${bill.quotationId}` : ""}`,
+        }).select("*").single();
+        if (jobSaved.error) throw jobSaved.error;
+
+        await supabase.from("invoices").insert({
+          invoice_number: bill.id, customer_id: bill.customerId, job_id: jobSaved.data.id, quotation_id: bill.quotationId || "",
+          items: bill.items, subtotal, discount: bill.discount, vat: bill.vat, total: bill.total, paid: bill.paid, balance: bill.balance,
+          status: bill.status, payment_method: bill.paymentMethod, invoice_date: bill.date,
+        });
+        if (paidNow > 0) {
+          const paymentSaved = await supabase.from("payments").insert({ job_id: jobSaved.data.id, customer_id: bill.customerId, amount: paidNow, payment_method: bill.paymentMethod, notes:`Invoice ${bill.id}`, paid_at:bill.date }).select("*").single();
+          if (paymentSaved.error) throw paymentSaved.error;
+          await supabase.from("transactions").insert({ transaction_type:"Income", description:`Invoice · ${bill.customer} · ${bill.id}`, amount:paidNow, account:bill.paymentMethod, job_id:jobSaved.data.id, customer_id:bill.customerId, payment_id:paymentSaved.data.id, transaction_date:bill.date });
+        }
+        await supabase.from("customers").update({ outstanding: Math.max(0, Number(customerRow.outstanding || 0) + bill.balance), jobs_count: Number(customerRow.jobs_count || 0) + 1 }).eq("id", bill.customerId);
+      } catch (error) {
+        console.error("Invoice cloud sync failed:", error);
+        alert("Bill created, but cloud sync failed. Check Appwrite and try again; the bill remains visible locally.");
+      }
     }
 
-    setShowBillBuilder(false);
-    setSelected(bill);
-    resetBillForm();
-
+    setShowBillBuilder(false); setSelected(bill); resetBillForm();
     if (shouldPrint) {
-      setBillPrinting(true);
-      setBillRun((n) => n + 1);
-      setPostPrintBill(bill);
-      window.setTimeout(() => {
-        document.body.classList.add("printing-invoice");
-        window.print();
-        window.setTimeout(() => document.body.classList.remove("printing-invoice"), 400);
-        setBillPrinting(false);
-      }, 300);
+      setBillPrinting(true); setBillRun((n) => n + 1); setPostPrintBill(bill);
+      window.setTimeout(() => { document.body.classList.add("printing-invoice"); window.print(); window.setTimeout(() => document.body.classList.remove("printing-invoice"), 400); }, 80);
+      window.setTimeout(() => setBillPrinting(false), 900);
     }
   };
 
@@ -2667,6 +2676,12 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
         </div>
       )}
 
+      <div className="billing-quote-strip">
+        <div><small>QUOTATION PIPELINE</small><strong>{quotations.length}</strong><span>saved quotations</span></div>
+        <div><small>QUOTED VALUE</small><strong>{money(quotations.reduce((a,q)=>a+Number(q.amount||0),0))}</strong><span>total quoted</span></div>
+        <div><small>APPROVED VALUE</small><strong>{money(quotations.filter(q=>q.status==="Approved").reduce((a,q)=>a+Number(q.amount||0),0))}</strong><span>approved quotations</span></div>
+        <div><small>CONVERSION</small><strong>{quotations.length?Math.round((quotations.filter(q=>q.status==="Approved").length/quotations.length)*100):0}%</strong><span>quotation performance</span></div>
+      </div>
       <div className="billing-stats">
         <Stat icon={FileText} label="Invoices" value={invoices.length} note="workshop invoices" color="blue" />
         <Stat icon={CircleDollarSign} label="Billed" value={money(invoices.reduce((a,b)=>a+b.amount,0))} note="total invoiced" color="green" />
@@ -2747,12 +2762,13 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
             <div className="bill-builder-grid">
               <div className="bill-form-pane">
                 <div className="bill-section-title"><span>01</span><div><strong>Customer</strong><small>Customer contact details</small></div></div>
-                <label className="field"><span>Saved customer</span>
-                  <select value={billForm.customerId} onChange={(e) => selectBillCustomer(e.target.value)}>
-                    <option value="">Select customer or enter manually</option>
-                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name || c.company}{c.phone ? ` · ${c.phone}` : ""}</option>)}
-                  </select>
+                <label className="field"><span>Find saved customer</span>
+                  <div className="bill-customer-search"><Search size={15}/><input value={customerSearch} onChange={(e)=>setCustomerSearch(e.target.value)} placeholder="Search name, phone, WhatsApp or email..."/></div>
                 </label>
+                <div className="bill-customer-results">
+                  {(customers || []).filter(c => { const q=customerSearch.trim().toLowerCase(); return q && [c.name,c.phone,c.whatsapp,c.email,c.location].some(v=>String(v||"").toLowerCase().includes(q)); }).slice(0,6).map(c => <button type="button" key={c.id || c.$id} className={String(billForm.customerId)===String(c.id || c.$id)?"selected":""} onClick={()=>{selectBillCustomer(c.id || c.$id);setCustomerSearch(c.name || "");}}><span className="customer-avatar">{String(c.name||"C").split(" ").map(x=>x[0]).join("").slice(0,2)}</span><span><strong>{c.name || c.company}</strong><small>{c.phone || c.whatsapp || c.email || "No contact"}</small></span><ChevronRight size={14}/></button>)}
+                  {!customerSearch.trim() && <small className="bill-search-hint">Start typing to find an existing customer. No long dropdown list.</small>}
+                </div>
                 <div className="bill-fields two">
                   <label className="field"><span>Customer *</span><input value={billForm.customer} onChange={(e)=>setBillForm({...billForm,customer:e.target.value})} placeholder="Customer / company"/></label>
                   <label className="field"><span>Phone</span><input value={billForm.phone} onChange={(e)=>setBillForm({...billForm,phone:e.target.value})} placeholder="+971 50..."/></label>
@@ -2763,16 +2779,25 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
                 </div>
                 <label className="field"><span>Address</span><input value={billForm.address} onChange={(e)=>setBillForm({...billForm,address:e.target.value})} placeholder="Dubai, UAE"/></label>
 
-                <div className="bill-section-title" style={{marginTop:22}}><span>02</span><div><strong>Bill item</strong><small>Upholstery work or material</small></div></div>
-                <label className="field"><span>Item / service *</span><input value={billForm.item} onChange={(e)=>setBillForm({...billForm,item:e.target.value})} placeholder="Leather replacement / sofa repair"/></label>
-                <label className="field"><span>Description</span><textarea rows="3" value={billForm.description} onChange={(e)=>setBillForm({...billForm,description:e.target.value})} placeholder="Work details, material, warranty..."/></label>
-                <div className="bill-fields three">
-                  <label className="field"><span>Quantity</span><input type="number" min="0.01" step="0.01" value={billForm.quantity} onChange={(e)=>setBillForm({...billForm,quantity:e.target.value})}/></label>
-                  <label className="field"><span>Unit price (AED)</span><input type="number" min="0" step="0.01" value={billForm.unitPrice} onChange={(e)=>setBillForm({...billForm,unitPrice:e.target.value})}/></label>
+                <div className="bill-section-title" style={{marginTop:22}}><span>02</span><div><strong>Bill items</strong><small>Add as many materials or services as needed</small></div><button type="button" className="secondary-button bill-add-item" onClick={addBillItem}><Plus size={14}/> Add item</button></div>
+                <div className="bill-line-editor">
+                  {billForm.items.map((row, index) => <div className="bill-line-card" key={row.id}>
+                    <div className="bill-line-number">{String(index+1).padStart(2,"0")}</div>
+                    <label className="field"><span>Material / service</span><select value={row.materialId} onChange={(e)=>selectMaterial(row.id,e.target.value)}><option value="">Choose saved material...</option>{materials.map(m=><option key={m.id || m.$id} value={m.id || m.$id}>{m.name} · {money(m.price)}/{m.unit}</option>)}</select></label>
+                    <label className="field"><span>Description</span><input value={row.item} onChange={(e)=>updateBillItem(row.id,"item",e.target.value)} placeholder="Sofa upholstery / repair"/></label>
+                    <label className="field"><span>Notes</span><input value={row.description} onChange={(e)=>updateBillItem(row.id,"description",e.target.value)} placeholder="Colour, fabric, work details"/></label>
+                    <label className="field"><span>Qty</span><input type="number" min="0.01" step="0.01" value={row.quantity} onChange={(e)=>updateBillItem(row.id,"quantity",e.target.value)}/></label>
+                    <label className="field"><span>Unit price (AED)</span><input type="number" min="0" step="0.01" value={row.unitPrice} onChange={(e)=>updateBillItem(row.id,"unitPrice",e.target.value)}/></label>
+                    <div className="bill-line-total"><small>AMOUNT</small><strong>{money(row.amount)}</strong></div>
+                    <button type="button" className="delete-small" onClick={()=>removeBillItem(row.id)} disabled={billForm.items.length===1} title="Remove item"><Trash2 size={14}/></button>
+                  </div>)}
+                </div>
+                <label className="field"><span>Related quotation (optional)</span><select value={billForm.quotationId} onChange={e=>{const q=quotations.find(x=>String(x.id)===String(e.target.value));setBillForm(f=>({...f,quotationId:e.target.value,...(q?.customer?{}:{})}));}}><option value="">No quotation</option>{quotations.map(q=><option key={q.id} value={q.id}>{q.id} · {q.customer} · {money(q.amount)}</option>)}</select></label>
+                <div className="bill-fields two">
                   <label className="field"><span>Discount (AED)</span><input type="number" min="0" step="0.01" value={billForm.discount} onChange={(e)=>setBillForm({...billForm,discount:e.target.value})}/></label>
+                  <label className="field"><span>VAT</span><select value={billForm.vat} onChange={(e)=>setBillForm({...billForm,vat:e.target.value})}><option value="0">0%</option><option value="5">5%</option></select></label>
                 </div>
                 <div className="bill-fields three">
-                  <label className="field"><span>VAT</span><select value={billForm.vat} onChange={(e)=>setBillForm({...billForm,vat:e.target.value})}><option value="0">0%</option><option value="5">5%</option></select></label>
                   <label className="field"><span>Paid now (AED)</span><input type="number" min="0" step="0.01" value={billForm.paid} onChange={(e)=>setBillForm({...billForm,paid:e.target.value})}/></label>
                   <label className="field"><span>Payment method</span><select value={billForm.paymentMethod} onChange={(e)=>setBillForm({...billForm,paymentMethod:e.target.value})}><option>Cash</option><option>Card</option><option>Bank Transfer</option><option>Credit</option></select></label>
                 </div>
@@ -2782,7 +2807,7 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
                 <div className="invoice-preview">
                   <div className="invoice-brand"><div><strong>AL KANZ</strong><span>UPHOLSTERY</span></div><b>INVOICE</b></div>
                   <div className="invoice-preview-meta"><div><small>BILL TO</small><strong>{billForm.customer || "Customer name"}</strong><span>{billForm.phone || billForm.email || "Contact details"}</span><span>{billForm.address || "Dubai, UAE"}</span></div><div><small>DATE</small><strong>{new Date().toLocaleDateString("en-AE")}</strong><span>Due on receipt</span></div></div>
-                  <div className="invoice-item-preview"><div><small>DESCRIPTION</small><strong>{billForm.item || "Upholstery service"}</strong><span>{billForm.description || "Professional upholstery work"}</span></div><strong>{money(subtotal)}</strong></div>
+                  <div className="invoice-preview-lines"><div className="invoice-preview-head"><span>DESCRIPTION</span><span>QTY</span><span>AMOUNT</span></div>{lineItems.map(row=><div className="invoice-item-preview" key={row.id}><div><strong>{row.item || "Upholstery service"}</strong><span>{row.description || "Professional upholstery work"}</span></div><span>{row.quantity}</span><strong>{money(row.amount)}</strong></div>)}</div>
                   <div className="invoice-totals"><span>Subtotal <b>{money(subtotal)}</b></span><span>Discount <b>- {money(discountAmount)}</b></span><span>VAT ({billForm.vat}%) <b>{money(vatAmount)}</b></span><strong>Total <b>{money(billTotal)}</b></strong><span>Paid now <b>{money(paidNow)}</b></span><span>Balance <b>{money(billBalance)}</b></span></div>
                   <div className="invoice-note">Thank you for choosing <b>Al Kanz Upholstery</b>. Please keep this invoice for your records.</div>
                 </div>
@@ -2830,7 +2855,7 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
         </div>
         <div className="bill-items-table">
           <div className="bill-items-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>AMOUNT</span></div>
-          <div className="bill-items-row"><div><strong>{postPrintBill?.item || "Upholstery service"}</strong><span>{postPrintBill?.description || "Professional upholstery work"}</span></div><span>{postPrintBill?.quantity || 1}</span><span>{money(postPrintBill?.unitPrice || 0)}</span><strong>{money((postPrintBill?.quantity || 1) * (postPrintBill?.unitPrice || 0))}</strong></div>
+          {(postPrintBill?.items?.length ? postPrintBill.items : [{item:postPrintBill?.item || "Upholstery service",description:postPrintBill?.description || "Professional upholstery work",quantity:postPrintBill?.quantity || 1,unitPrice:postPrintBill?.unitPrice || 0,amount:(postPrintBill?.quantity || 1)*(postPrintBill?.unitPrice || 0)}]).map((row,i)=><div className="bill-items-row" key={row.id || i}><div><strong>{row.item}</strong><span>{row.description || "Professional upholstery work"}</span></div><span>{row.quantity}</span><span>{money(row.unitPrice)}</span><strong>{money(row.amount || Number(row.quantity||0)*Number(row.unitPrice||0))}</strong></div>)}
         </div>
         <div className="bill-bottom-grid">
           <div className="bill-thanks"><span>THANK YOU</span><strong>Thank you for choosing Al Kanz Upholstery.</strong><p>Please keep this invoice for your records. We appreciate your business.</p></div>
@@ -2859,7 +2884,7 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
               </div>
               <div className="bill-items-table">
                 <div className="bill-items-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>AMOUNT</span></div>
-                <div className="bill-items-row"><div><strong>{selected.item || "Upholstery service"}</strong><span>{selected.work || selected.description || "Professional upholstery work"}</span></div><span>{selected.quantity || 1}</span><span>{money(selected.unitPrice || 0)}</span><strong>{money((selected.quantity || 1) * (selected.unitPrice || 0) || selected.amount || selected.total || 0)}</strong></div>
+                {(selected.items?.length ? selected.items : [{item:selected.item || "Upholstery service",description:selected.work || selected.description || "Professional upholstery work",quantity:selected.quantity || 1,unitPrice:selected.unitPrice || 0,amount:(selected.quantity || 1)*(selected.unitPrice || 0) || selected.amount || selected.total || 0}]).map((row,i)=><div className="bill-items-row" key={row.id || i}><div><strong>{row.item}</strong><span>{row.description || "Professional upholstery work"}</span></div><span>{row.quantity}</span><span>{money(row.unitPrice)}</span><strong>{money(row.amount || Number(row.quantity||0)*Number(row.unitPrice||0))}</strong></div>)}
               </div>
               <div className="bill-bottom-grid">
                 <div className="bill-thanks"><span>THANK YOU</span><strong>Thank you for choosing Al Kanz Upholstery.</strong><p>Please keep this invoice for your records. We appreciate your business.</p></div>
@@ -2904,10 +2929,12 @@ function ReportsPage({ jobs = [], totalPaid, outstanding, totalExpenses = 0, net
   const [period, setPeriod] = useState("12m");
   const [view, setView] = useState("overview");
   const [status, setStatus] = useState("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const safeJobs=Array.isArray(jobs)?jobs:[]; const safeExpenses=Array.isArray(expenses)?expenses:[];
   const now=new Date();
   const cutoff = period==="7d"?7:period==="30d"?30:period==="90d"?90:3650;
-  const inPeriod=(raw)=>{const d=new Date(raw);return Number.isNaN(d.getTime())||cutoff===3650||(now-d)<=cutoff*86400000;};
+  const inPeriod=(raw)=>{const d=new Date(raw);if(Number.isNaN(d.getTime()))return false;if(period==="custom"){const from=customFrom?new Date(`${customFrom}T00:00:00`):null;const to=customTo?new Date(`${customTo}T23:59:59`):null;return (!from||d>=from)&&(!to||d<=to);}return cutoff===3650||(now-d)<=cutoff*86400000;};
   const filtered=safeJobs.filter(j=>inPeriod(j.date||j.created_at||j.deliveryDate)&&(status==="all"||String(j.status||"").toLowerCase()===status));
   const revenue=filtered.reduce((a,b)=>a+Number(b.amount||0),0); const paid=filtered.reduce((a,b)=>a+Number(b.paid||0),0); const pending=Math.max(0,revenue-paid); const jobCount=filtered.length;
   const statusCounts={received:filtered.filter(j=>String(j.status).toLowerCase()==="received").length,progress:filtered.filter(j=>String(j.status).toLowerCase().includes("progress")).length,ready:filtered.filter(j=>String(j.status).toLowerCase()==="ready").length,delivered:filtered.filter(j=>String(j.status).toLowerCase()==="delivered").length};
@@ -2916,7 +2943,7 @@ function ReportsPage({ jobs = [], totalPaid, outstanding, totalExpenses = 0, net
   const exportCsv=()=>{const rows=["Report,Value",`Revenue,${revenue}`,`Collected,${paid}`,`Outstanding,${pending}`,`Expenses,${totalExpenses}`,`Net Cash,${netCash}`,`Jobs,${jobCount}`].join("\n");const blob=new Blob([rows],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`al-kanz-${view}-report.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);};
   return <>
     <PageTitle eyebrow="FINANCE · BUSINESS INTELLIGENCE" title="Reports & Insights" subtitle="Track sales, collections, jobs, expenses, customers and workshop performance."/>
-    <div className="report-control-panel"><div className="report-view-tabs">{[["overview","Overview"],["revenue","Revenue"],["collections","Collections"],["expenses","Expenses"],["jobs","Jobs"],["customers","Customers"]].map(([k,l])=><button key={k} className={view===k?"active":""} onClick={()=>setView(k)}>{l}</button>)}</div><div className="report-filters"><select value={period} onChange={e=>setPeriod(e.target.value)}><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="12m">Last 12 months</option></select><select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All job statuses</option><option value="received">Received</option><option value="in progress">In Progress</option><option value="ready">Ready</option><option value="delivered">Delivered</option></select><button className="secondary-button" onClick={exportCsv}><Download size={15}/> Export CSV</button><button className="primary-button" onClick={()=>window.print()}><Printer size={15}/> Print</button></div></div>
+    <div className="report-control-panel"><div className="report-view-tabs">{[["overview","Overview"],["revenue","Revenue"],["collections","Collections"],["expenses","Expenses"],["jobs","Jobs"],["customers","Customers"]].map(([k,l])=><button key={k} className={view===k?"active":""} onClick={()=>setView(k)}>{l}</button>)}</div><div className="report-filters"><select value={period} onChange={e=>setPeriod(e.target.value)}><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="12m">Last 12 months</option><option value="custom">Custom dates</option></select>{period==="custom"&&<><label className="report-date-field">From<input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)}/></label><label className="report-date-field">To<input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)}/></label></>}<select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All job statuses</option><option value="received">Received</option><option value="in progress">In Progress</option><option value="ready">Ready</option><option value="delivered">Delivered</option></select><button className="secondary-button" onClick={exportCsv}><Download size={15}/> Export CSV</button><button className="primary-button" onClick={()=>window.print()}><Printer size={15}/> Print</button></div></div>
     <div className="report-grid report-grid-rich"><ReportBox icon={TrendingUp} title="Revenue" value={money(revenue)} note={`${jobCount} jobs in selected period`}/><ReportBox icon={CircleDollarSign} title="Collected" value={money(paid)} note="Payments received"/><ReportBox icon={AlertCircle} title="Pending" value={money(pending)} note="Awaiting collection"/><ReportBox icon={Wallet} title="Expenses" value={money(totalExpenses)} note="Recorded workshop costs"/><ReportBox icon={TrendingUp} title="Net cash" value={money(netCash)} note="Collected less expenses"/><ReportBox icon={CheckCircle2} title="Collection rate" value={`${revenue?Math.round((paid/revenue)*100):0}%`} note="Revenue collected"/></div>
     <div className="reports-main-grid">
       <div className="card report-chart report-chart-large"><CardHeader eyebrow="PERFORMANCE" title="Revenue trend" subtitle="Monthly billed value · last 6 months"/><div className="bars live-bars report-bars-large">{monthly.map(x=>{const max=Math.max(...monthly.map(y=>y.value),1);return <div className="bar-wrap" key={x.label}><strong>{money(x.value)}</strong><div className="bar animated-bar" style={{height:`${x.value?Math.max(8,(x.value/max)*100):4}%`}}/><span>{x.label}</span></div>})}</div></div>
@@ -3247,6 +3274,15 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
             <div className="document-totals"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(grandTotal)}</strong></div></div>
             <div className="document-note"><strong>Quotation terms</strong><span>This quotation is a demo estimate and is valid for {form.validity}. Final billing may vary based on approved work or materials.</span></div>
           </div>
+        </div>
+      )}
+
+      {!showForm && (
+        <div className="quotation-performance-bar">
+          <div><small>QUOTATIONS</small><strong>{safeQuotations.length}</strong></div>
+          <div><small>TOTAL VALUE</small><strong>{money(safeQuotations.reduce((a,q)=>a+Number(q.amount||0),0))}</strong></div>
+          <div><small>APPROVED</small><strong>{money(safeQuotations.filter(q=>q.status==="Approved").reduce((a,q)=>a+Number(q.amount||0),0))}</strong></div>
+          <div><small>CONVERSION</small><strong>{safeQuotations.length?Math.round((safeQuotations.filter(q=>q.status==="Approved").length/safeQuotations.length)*100):0}%</strong></div>
         </div>
       )}
 
@@ -3837,38 +3873,22 @@ function SupplierModal({ close, save }) {
 ============================================================ */
 
 function StaffModal({ close, save }) {
-  const [form, setForm] = useState({
-    name: "",
-    role: "Upholsterer",
-    phone: "",
-    status: "Active",
-  });
-
-  const submit = (e) => {
-    e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim()) {
-      alert("Please enter staff name and phone number.");
-      return;
-    }
-    save({ ...form, name: form.name.trim(), phone: form.phone.trim() });
-  };
-
-  return (
-    <Modal title="Add Staff" subtitle="Add a workshop employee and assign their role." close={close}>
-      <form onSubmit={submit}>
-        <div className="modal-grid">
-          <Field label="Staff name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="Full name" />
-          <Field label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="+971 50 000 0000" />
-          <SelectField label="Role" value={form.role} onChange={(v) => setForm({ ...form, role: v })} options={["Upholsterer", "Master Upholsterer", "Leather Technician", "Stitching Specialist", "Foam Technician", "Helper", "Manager"]} />
-          <SelectField label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={["Active", "On Leave"]} />
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="secondary-button" onClick={close}>Cancel</button>
-          <button type="submit" className="primary-button"><Save size={16} />Save Staff</button>
-        </div>
-      </form>
-    </Modal>
-  );
+  const [form, setForm] = useState({ name:"", role:"Upholsterer", phone:"", email:"", address:"", emergencyContact:"", bank:"", joiningDate:"", salary:"", salaryType:"Monthly", attendance:"100", performance:"100", status:"Active", notes:"" });
+  const update=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const submit=(e)=>{e.preventDefault();if(!form.name.trim()||!form.phone.trim())return alert("Please enter staff name and phone number.");save({...form,name:form.name.trim(),phone:form.phone.trim(),salary:Number(form.salary||0),attendance:Number(form.attendance||0),performance:Number(form.performance||0)});};
+  return <Modal title="Add Staff" subtitle="Create a complete employee profile with payroll and performance information." close={close}>
+    <form onSubmit={submit}>
+      <div className="form-section-label"><span>PROFILE</span><small>Employee identity and contact</small></div>
+      <div className="modal-grid"><Field label="Staff name *" value={form.name} onChange={v=>update("name",v)} placeholder="Full name"/><SelectField label="Role" value={form.role} onChange={v=>update("role",v)} options={["Upholsterer","Master Upholsterer","Leather Technician","Stitching Specialist","Foam Technician","Helper","Manager"]}/><Field label="Phone *" value={form.phone} onChange={v=>update("phone",v)} placeholder="+971..."/><Field label="Email" value={form.email} onChange={v=>update("email",v)} placeholder="staff@email.com"/></div>
+      <div className="modal-grid"><Field label="Address" value={form.address} onChange={v=>update("address",v)} placeholder="Dubai, UAE"/><Field label="Emergency contact" value={form.emergencyContact} onChange={v=>update("emergencyContact",v)} placeholder="+971..."/><Field label="Joining date" type="date" value={form.joiningDate} onChange={v=>update("joiningDate",v)}/><SelectField label="Status" value={form.status} onChange={v=>update("status",v)} options={["Active","On Leave","Inactive"]}/></div>
+      <div className="form-section-label"><span>PAYROLL</span><small>Salary and payment information</small></div>
+      <div className="modal-grid"><Field label="Salary" type="number" value={form.salary} onChange={v=>update("salary",v)} placeholder="AED 0"/><SelectField label="Salary period" value={form.salaryType} onChange={v=>update("salaryType",v)} options={["Monthly","Weekly","Daily","Hourly"]}/><Field label="Bank" value={form.bank} onChange={v=>update("bank",v)} placeholder="Bank name"/></div>
+      <div className="form-section-label"><span>PERFORMANCE</span><small>Workshop performance snapshot</small></div>
+      <div className="modal-grid"><Field label="Attendance %" type="number" value={form.attendance} onChange={v=>update("attendance",v)} placeholder="100"/><Field label="Performance %" type="number" value={form.performance} onChange={v=>update("performance",v)} placeholder="100"/></div>
+      <label className="field"><span>Notes</span><textarea rows="3" value={form.notes} onChange={e=>update("notes",e.target.value)} placeholder="Skills, responsibilities, payroll notes..."/></label>
+      <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button type="submit" className="primary-button"><Save size={16}/>Save Staff</button></div>
+    </form>
+  </Modal>;
 }
 
 /* ============================================================
