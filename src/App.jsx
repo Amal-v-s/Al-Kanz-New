@@ -417,21 +417,21 @@ const INITIAL_STAFF = [
     id: 1,
     name: "Mohammed Afsal",
     role: "Master Upholsterer",
-    phone: "+971 50 456 7890", email: "mohammed@alkanzupholstery.com", salary: 6500, salaryType: "Monthly", joiningDate: "2024-01-15", address: "Dubai, UAE", emergencyContact: "+971 50 111 2222", bank: "Emirates NBD", attendance: 96, performance: 94, notes: "Master upholstery and restoration specialist",
+    phone: "+971 50 456 7890",
     status: "Active",
   },
   {
     id: 2,
     name: "Shameer",
     role: "Leather Technician",
-    phone: "+971 52 567 8901", email: "shameer@alkanzupholstery.com", salary: 5200, salaryType: "Monthly", joiningDate: "2024-04-10", address: "Sharjah, UAE", emergencyContact: "+971 52 111 3333", bank: "ADCB", attendance: 93, performance: 89, notes: "Leather fitting and finishing",
+    phone: "+971 52 567 8901",
     status: "Active",
   },
   {
     id: 3,
     name: "Riyas",
     role: "Stitching Specialist",
-    phone: "+971 55 678 9012", email: "riyas@alkanzupholstery.com", salary: 4800, salaryType: "Monthly", joiningDate: "2025-01-06", address: "Ajman, UAE", emergencyContact: "+971 55 111 4444", bank: "FAB", attendance: 88, performance: 86, notes: "Stitching and custom seat covers",
+    phone: "+971 55 678 9012",
     status: "On Leave",
   },
 ];
@@ -549,27 +549,39 @@ const auditLocal = (action, entity, id, details = {}) => {
 };
 
 const mapJob = (row) => ({
-  id: row.job_number,
-  customer: row.customer_name,
+  ...row,
+  id: row.job_number || row.id,
+  customer: row.customer_name || row.customer || "",
   phone: row.phone || "",
-  item: row.item,
+  whatsapp: row.whatsapp || row.phone || "",
+  email: row.email || "",
+  address: row.address || "",
+  item: row.item || "",
   description: row.description || "",
   work: row.work || "",
   material: row.material || "",
   colour: row.colour || "",
   quantity: Number(row.quantity || 1),
+  unitPrice: Number(row.unit_price || row.unitPrice || 0),
   materialCost: Number(row.material_cost || 0),
   labour: Number(row.labour || 0),
   otherCharges: Number(row.other_charges || 0),
   discount: Number(row.discount || 0),
-  amount: Number(row.amount || 0),
+  amount: Number(row.amount || row.total || 0),
+  total: Number(row.total || row.amount || 0),
   paid: Number(row.paid || 0),
-  balance: Math.max(0, Number(row.amount || 0) - Number(row.paid || 0)),
+  balance: Math.max(0, Number(row.total || row.amount || 0) - Number(row.paid || 0)),
+  vat: Number(row.vat || 0),
+  vatRate: Number(row.vat_rate || 0),
+  paymentMethod: row.payment_method || row.paymentMethod || "",
+  quotationId: row.quotation_id || row.quotationId || "",
   status: row.status || "Received",
   progress: Number(row.progress || 0),
   deliveryDate: row.delivery_date || "",
   notes: row.notes || "",
-  date: row.created_at ? new Date(row.created_at).toLocaleDateString("en-AE", { day:"2-digit", month:"short", year:"numeric", timeZone:"Asia/Dubai" }) : "",
+  items: Array.isArray(row.items) ? row.items : [],
+  invoice_type: row.invoice_type || "repair",
+  date: row.created_at ? new Date(row.created_at).toLocaleDateString("en-AE", { day:"2-digit", month:"short", year:"numeric", timeZone:"Asia/Dubai" }) : (row.date || ""),
   dbId: row.id,
 });
 
@@ -603,10 +615,10 @@ const mapSupplier = (row) => ({
 
 const mapStaff = (row) => ({
   ...row,
-  id: row.id, name: row.name, role: row.role || "", phone: row.phone || "", email: row.email || "",
-  address: row.address || "", emergencyContact: row.emergencyContact || row.emergency_contact || "", bank: row.bank || "",
-  joiningDate: row.joiningDate || row.joining_date || "", salary: Number(row.salary || 0), salaryType: row.salaryType || row.salary_type || "Monthly",
-  attendance: Number(row.attendance || 0), performance: Number(row.performance || 0), notes: row.notes || "", status: row.status || "Active"
+  id: row.id, name: row.name || "", role: row.role || "Upholsterer", phone: row.phone || "", email: row.email || "",
+  address: row.address || "", emergencyContact: row.emergency_contact || row.emergencyContact || "", joiningDate: row.joining_date || row.joiningDate || "",
+  bank: row.bank || "", iban: row.iban || "", salary: Number(row.salary || 0), salaryPeriod: row.salary_period || row.salaryPeriod || "Monthly",
+  attendance: Number(row.attendance || 0), performance: Number(row.performance || 0), status: row.status || "Active", notes: row.notes || "",
 });
 
 function App() {
@@ -895,12 +907,10 @@ const netCash = totalPaid - totalExpenses;
     if (hasSupabase) {
       try {
         const { error } = await supabase.from("staff").insert({
-          name: person.name, role: person.role, phone: person.phone, email: person.email || "",
-          address: person.address || "", emergencyContact: person.emergencyContact || "",
-          bank: person.bank || "", joiningDate: person.joiningDate || "",
-          salary: Number(person.salary || 0), salaryType: person.salaryType || "Monthly",
-          attendance: Number(person.attendance || 0), performance: Number(person.performance || 0),
-          notes: person.notes || "", status: person.status,
+          name: person.name, role: person.role, phone: person.phone, email: person.email || "", address: person.address || "",
+          emergency_contact: person.emergencyContact || "", joining_date: person.joiningDate || "", bank: person.bank || "", iban: person.iban || "",
+          salary: Number(person.salary || 0), salary_period: person.salaryPeriod || "Monthly", attendance: Number(person.attendance || 0),
+          performance: Number(person.performance || 0), status: person.status || "Active", notes: person.notes || "",
         });
         if (error) throw error;
       } catch (error) {
@@ -2390,63 +2400,130 @@ function SuppliersPage({ suppliers = [], jobs = [], expenses = [], transactions 
    STAFF
 ============================================================ */
 
-function StaffPage({ staff, setStaff, setModal, setEntityPreview }) {
-  const safeStaff=Array.isArray(staff)?staff:[];
-  const [selected,setSelected]=useState(null);
-  const payroll=safeStaff.reduce((a,p)=>a+Number(p.salary||0),0);
-  const avgPerformance=safeStaff.length?Math.round(safeStaff.reduce((a,p)=>a+Number(p.performance||0),0)/safeStaff.length):0;
-  return <><PageTitle eyebrow="TEAM · PAYROLL" title="Staff & Payroll" subtitle="Manage employee profiles, salaries, attendance and workshop performance." button="Add Staff" onClick={()=>setModal("staff")}/>
-    <div className="staff-summary-grid"><ReportBox icon={Users} title="Team" value={safeStaff.length} note="Total staff"/><ReportBox icon={Wallet} title="Payroll" value={money(payroll)} note="Monthly salary run"/><ReportBox icon={TrendingUp} title="Performance" value={`${avgPerformance}%`} note="Average performance"/><ReportBox icon={CheckCircle2} title="Active" value={safeStaff.filter(p=>p.status==="Active").length} note="Currently active"/></div>
-    <div className="staff-grid">{safeStaff.map(person=><button type="button" className="staff-card staff-card-button" key={person.id} onClick={()=>setSelected(person)}><div className="staff-avatar">{String(person.name||"S").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><h3>{person.name}</h3><p>{person.role}</p><span>{person.phone}</span><div className="staff-metrics"><span><small>SALARY</small><b>{money(person.salary||0)}</b></span><span><small>PERFORMANCE</small><b>{Number(person.performance||0)}%</b></span></div><div className="staff-progress"><i style={{width:`${Math.min(100,Number(person.performance||0))}%`}}/></div><div className="staff-card-footer"><label className={person.status === "Active" ? "staff-active" : "staff-leave"}>{person.status}</label><Eye size={15}/></div></button>)}</div>
-    {selected&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setSelected(null)}><div className="card staff-profile-modal"><button className="modal-close" onClick={()=>setSelected(null)}><X size={17}/></button><div className="crm-profile-head"><div className="staff-avatar staff-avatar-xl">{String(selected.name||"S").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><div><span className="eyebrow">EMPLOYEE PROFILE</span><h2>{selected.name}</h2><p>{selected.role} · {selected.status}</p></div></div><div className="crm-kpis"><div><small>SALARY</small><strong>{money(selected.salary||0)}</strong><span>{selected.salaryType||"Monthly"}</span></div><div><small>PERFORMANCE</small><strong>{Number(selected.performance||0)}%</strong><span>Current score</span></div><div><small>ATTENDANCE</small><strong>{Number(selected.attendance||0)}%</strong><span>Attendance</span></div><div><small>JOINED</small><strong>{selected.joiningDate||"—"}</strong><span>Joining date</span></div></div><div className="crm-contact-grid"><div><small>PHONE</small><strong>{selected.phone||"—"}</strong></div><div><small>EMAIL</small><strong>{selected.email||"—"}</strong></div><div><small>ADDRESS</small><strong>{selected.address||"—"}</strong></div><div><small>EMERGENCY</small><strong>{selected.emergencyContact||"—"}</strong></div><div><small>BANK</small><strong>{selected.bank||"—"}</strong></div><div><small>NOTES</small><strong>{selected.notes||"—"}</strong></div></div><div className="document-actions"><button className="secondary-button" onClick={()=>setSelected(null)}>Close</button></div></div></div>}
-  </>;
+function StaffPage({ staff = [], setStaff, setModal, setEntityPreview }) {
+  const safeStaff = Array.isArray(staff) ? staff : [];
+  const active = safeStaff.filter((p) => p.status === "Active").length;
+  const payroll = safeStaff.filter((p) => p.salaryPeriod === "Monthly").reduce((sum, p) => sum + Number(p.salary || 0), 0);
+  const avgPerformance = safeStaff.length ? Math.round(safeStaff.reduce((sum,p)=>sum+Number(p.performance||0),0)/safeStaff.length) : 0;
+  const avgAttendance = safeStaff.length ? Math.round(safeStaff.reduce((sum,p)=>sum+Number(p.attendance||0),0)/safeStaff.length) : 0;
+  return (
+    <>
+      <PageTitle eyebrow="TEAM · PAYROLL" title="Staff" subtitle="Manage employees, salaries, attendance and workshop performance." button="Add Staff" onClick={()=>setModal("staff")} />
+      <div className="staff-summary-grid">
+        <ReportBox icon={Users} title="Total staff" value={safeStaff.length} note={`${active} active members`} />
+        <ReportBox icon={CircleDollarSign} title="Monthly payroll" value={money(payroll)} note="Monthly salary records" />
+        <ReportBox icon={TrendingUp} title="Performance" value={`${avgPerformance}%`} note="Average performance" />
+        <ReportBox icon={CalendarDays} title="Attendance" value={`${avgAttendance}%`} note="Average attendance" />
+      </div>
+      <div className="staff-grid staff-grid-rich">
+        {safeStaff.map((person)=>{
+          const initials=String(person.name||"S").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
+          return <div className="staff-card staff-card-rich" key={person.id}>
+            <div className="staff-card-top"><div className="staff-avatar">{initials}</div><span className={person.status === "Active" ? "staff-active" : "staff-leave"}>{person.status}</span></div>
+            <h3>{person.name}</h3><p>{person.role}</p>
+            <div className="staff-contact-lines"><span><Phone size={13}/>{person.phone||"No phone"}</span><span><Mail size={13}/>{person.email||"No email"}</span></div>
+            <div className="staff-salary-box"><div><small>SALARY</small><strong>{money(person.salary)}</strong></div><span>{person.salaryPeriod}</span></div>
+            <div className="staff-metrics"><div><small>ATTENDANCE</small><strong>{Number(person.attendance||0)}%</strong></div><div><small>PERFORMANCE</small><strong>{Number(person.performance||0)}%</strong></div></div>
+            <button type="button" className="secondary-button full-width" onClick={()=>setEntityPreview?.({type:"Staff",...person})}><Eye size={15}/> View staff profile</button>
+          </div>;
+        })}
+        {!safeStaff.length && <EmptyState icon={UserRound} title="No staff members" text="Add your first workshop employee." />}
+      </div>
+    </>
+  );
 }
 
 /* ============================================================
    BILLING
 ============================================================ */
 
-function BillingPage({ page, jobs, payments = [], transactions = [], outstanding, totalPaid, recordPayment, customers = [], materials = [], quotations = [], setJobs, setPayments, setTransactions }) {
-  // Defensive normalization: Appwrite/localStorage can briefly return null or a non-array
-  // while data is loading. The billing UI must still render instead of becoming blank.
+function BillingPage({
+  page,
+  jobs = [],
+  payments = [],
+  transactions = [],
+  outstanding,
+  totalPaid,
+  recordPayment,
+  customers = [],
+  materials = [],
+  quotations = [],
+  setJobs,
+  setPayments,
+  setTransactions,
+}) {
   const safeJobs = Array.isArray(jobs) ? jobs : [];
   const safePayments = Array.isArray(payments) ? payments : [];
-  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+  const safeCustomers = Array.isArray(customers) ? customers : [];
+  const safeMaterials = Array.isArray(materials) ? materials : [];
+  const safeQuotations = Array.isArray(quotations) ? quotations : [];
 
   const invoices = safeJobs.map((job) => ({
-    id: `INV-${String(job.id).replace("AK-", "")}`,
-    customer: job.customer,
-    jobId: job.id,
-    item: job.item,
-    amount: Number(job.amount || 0),
+    ...job,
+    id: job.invoice_id || `INV-${String(job.id).replace("AK-", "")}`,
+    customer: job.customer || "Customer",
+    items: Array.isArray(job.items) && job.items.length
+      ? job.items
+      : [{
+          item: job.item || "Upholstery service",
+          description: job.description || job.work || "",
+          quantity: Number(job.quantity || 1),
+          unitPrice: Number(job.unitPrice || job.amount || 0),
+          amount: Number(job.amount || 0),
+        }],
+    amount: Number(job.total || job.amount || 0),
     paid: Number(job.paid || 0),
-    balance: Math.max(0, Number(job.amount || 0) - Number(job.paid || 0)),
-    status: Number(job.amount || 0) <= Number(job.paid || 0) ? "Paid" : Number(job.paid || 0) > 0 ? "Part Paid" : "Unpaid",
+    balance: Math.max(0, Number(job.total || job.amount || 0) - Number(job.paid || 0)),
+    phone: job.phone || "",
+    whatsapp: job.whatsapp || job.phone || "",
+    email: job.email || "",
+    address: job.address || "",
+    paymentMethod: job.paymentMethod || job.payment_method || "",
+    quotationId: job.quotationId || job.quotation_id || "",
+    status: Number(job.total || job.amount || 0) <= Number(job.paid || 0)
+      ? "Paid"
+      : Number(job.paid || 0) > 0 ? "Part Paid" : "Unpaid",
   }));
+
   const [selected, setSelected] = useState(null);
   const [payment, setPayment] = useState("");
-  const [billPrinting, setBillPrinting] = useState(false);
-  const [billRun, setBillRun] = useState(0);
+  const [saving, setSaving] = useState(false);
   const [showBillBuilder, setShowBillBuilder] = useState(false);
   const [postPrintBill, setPostPrintBill] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [billForm, setBillForm] = useState({
-    customerId: "", customer: "", phone: "", whatsapp: "", email: "", address: "",
-    items: [{ id: `item-${Date.now()}`, materialId: "", item: "", description: "", quantity: "1", unitPrice: "" }],
-    discount: "0", vat: "5", paid: "0", paymentMethod: "Cash", quotationId: "",
+    customerId: "",
+    customer: "",
+    phone: "",
+    whatsapp: "",
+    email: "",
+    address: "",
+    quotationId: "",
+    discount: "0",
+    vat: "5",
+    paid: "0",
+    paymentMethod: "Cash",
   });
-
-  const collectedPercent = invoices.reduce((a, b) => a + b.amount, 0) > 0
-    ? Math.min(100, (totalPaid / invoices.reduce((a, b) => a + b.amount, 0)) * 100)
-    : 0;
+  const [billItems, setBillItems] = useState([
+    { id: Date.now(), materialId: "", item: "", description: "", quantity: "1", unitPrice: "" },
+  ]);
 
   const resetBillForm = () => {
-    setCustomerSearch("");
     setBillForm({
-      customerId: "", customer: "", phone: "", whatsapp: "", email: "", address: "",
-      items: [{ id: `item-${Date.now()}`, materialId: "", item: "", description: "", quantity: "1", unitPrice: "" }],
-      discount: "0", vat: "5", paid: "0", paymentMethod: "Cash", quotationId: "",
+      customerId: "",
+      customer: "",
+      phone: "",
+      whatsapp: "",
+      email: "",
+      address: "",
+      quotationId: "",
+      discount: "0",
+      vat: "5",
+      paid: "0",
+      paymentMethod: "Cash",
     });
+    setBillItems([{ id: Date.now(), materialId: "", item: "", description: "", quantity: "1", unitPrice: "" }]);
+    setCustomerSearch("");
   };
 
   const openBillBuilder = () => {
@@ -2454,30 +2531,82 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
     setShowBillBuilder(true);
   };
 
-  const selectBillCustomer = (id) => {
-    const c = customers.find((item) => String(item.id || item.$id) === String(id));
-    if (!c) {
-      setBillForm((f) => ({ ...f, customerId: "", customer: "" }));
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return [];
+    return safeCustomers
+      .filter((customer) => [customer.name, customer.phone, customer.whatsapp, customer.email, customer.address, customer.location]
+        .some((value) => String(value || "").toLowerCase().includes(q)))
+      .slice(0, 8);
+  }, [safeCustomers, customerSearch]);
+
+  const selectCustomer = (customer) => {
+    setBillForm((form) => ({
+      ...form,
+      customerId: String(customer.id),
+      customer: customer.name || customer.company || "",
+      phone: customer.phone || "",
+      whatsapp: customer.whatsapp || customer.phone || "",
+      email: customer.email || "",
+      address: customer.address || customer.location || "",
+    }));
+    setCustomerSearch(customer.name || "");
+  };
+
+  const addItem = () => {
+    setBillItems((items) => [
+      ...items,
+      { id: Date.now() + Math.random(), materialId: "", item: "", description: "", quantity: "1", unitPrice: "" },
+    ]);
+  };
+
+  const updateItem = (index, key, value) => {
+    setBillItems((items) => items.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, [key]: value } : item
+    )));
+  };
+
+  const removeItem = (index) => {
+    setBillItems((items) => items.length <= 1 ? items : items.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const selectMaterial = (index, materialId) => {
+    const material = safeMaterials.find((item) => String(item.id) === String(materialId));
+    if (!material) {
+      updateItem(index, "materialId", "");
       return;
     }
-    setBillForm((f) => ({
-      ...f,
-      customerId: String(c.id),
-      customer: c.name || c.company || "",
-      phone: c.phone || "",
-      whatsapp: c.whatsapp || c.phone || "",
-      email: c.email || "",
-      address: c.address || c.location || "",
+    setBillItems((items) => items.map((item, itemIndex) => itemIndex === index ? {
+      ...item,
+      materialId: String(material.id),
+      item: material.name || "",
+      description: `${material.category || "Material"} · ${material.unit || "unit"}`,
+      unitPrice: String(material.price || 0),
+    } : item));
+  };
+
+  const applyQuotation = (quotationId) => {
+    const quote = safeQuotations.find((item) => String(item.id) === String(quotationId));
+    setBillForm((form) => ({ ...form, quotationId }));
+    if (!quote) return;
+    setBillItems([{
+      id: Date.now(),
+      materialId: "",
+      item: quote.item || "",
+      description: quote.description || "",
+      quantity: String(quote.quantity || 1),
+      unitPrice: String(quote.unitPrice || 0),
+    }]);
+    setBillForm((form) => ({
+      ...form,
+      quotationId,
+      customer: form.customer || quote.customer || "",
+      phone: form.phone || quote.phone || "",
     }));
   };
 
-  const lineItems = (billForm.items || []).map((row) => ({
-    ...row,
-    quantity: Number(row.quantity || 0),
-    unitPrice: Number(row.unitPrice || 0),
-    amount: Math.max(0, Number(row.quantity || 0) * Number(row.unitPrice || 0)),
-  }));
-  const subtotal = lineItems.reduce((sum, row) => sum + row.amount, 0);
+  const itemTotals = billItems.map((item) => Math.max(0, Number(item.quantity || 0) * Number(item.unitPrice || 0)));
+  const subtotal = itemTotals.reduce((sum, value) => sum + value, 0);
   const discountAmount = Math.min(subtotal, Math.max(0, Number(billForm.discount || 0)));
   const taxable = Math.max(0, subtotal - discountAmount);
   const vatAmount = taxable * (Number(billForm.vat || 0) / 100);
@@ -2485,21 +2614,194 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
   const paidNow = Math.min(billTotal, Math.max(0, Number(billForm.paid || 0)));
   const billBalance = Math.max(0, billTotal - paidNow);
 
-  const updateBillItem = (itemId, key, value) => {
-    setBillForm((f) => ({ ...f, items: f.items.map((row) => row.id === itemId ? { ...row, [key]: value } : row) }));
+  const quotationStats = {
+    total: safeQuotations.length,
+    approved: safeQuotations.filter((quote) => ["Approved", "Accepted", "Converted"].includes(quote.status)).length,
+    value: safeQuotations.reduce((sum, quote) => sum + Number(quote.amount || 0), 0),
   };
-  const addBillItem = () => setBillForm((f) => ({ ...f, items: [...f.items, { id: `item-${Date.now()}-${Math.random()}`, materialId: "", item: "", description: "", quantity: "1", unitPrice: "" }] }));
-  const removeBillItem = (itemId) => setBillForm((f) => ({ ...f, items: f.items.length <= 1 ? f.items : f.items.filter((row) => row.id !== itemId) }));
-  const selectMaterial = (itemId, materialId) => {
-    const material = materials.find((m) => String(m.id || m.$id) === String(materialId));
-    setBillForm((f) => ({ ...f, items: f.items.map((row) => row.id === itemId ? { ...row, materialId: String(materialId || ""), item: material?.name || row.item, unitPrice: material ? String(material.price || 0) : row.unitPrice, description: material ? `${material.category || "Material"} · ${material.unit || "unit"}` : row.description } : row) }));
+
+  const collectionBase = safeJobs.reduce((sum, job) => sum + Number(job.amount || job.total || 0), 0);
+  const collectionRate = collectionBase > 0 ? Math.min(100, (Number(totalPaid || 0) / collectionBase) * 100) : 0;
+
+  const buildBill = () => {
+    const id = `INV-${String(Date.now()).slice(-8)}`;
+    const items = billItems
+      .filter((item) => item.item.trim() || Number(item.unitPrice || 0) > 0)
+      .map((item) => ({
+        item: item.item.trim() || "Custom service",
+        description: item.description.trim(),
+        materialId: item.materialId || "",
+        quantity: Number(item.quantity || 1),
+        unitPrice: Number(item.unitPrice || 0),
+        amount: Number(item.quantity || 0) * Number(item.unitPrice || 0),
+      }));
+
+    return {
+      id,
+      invoice_id: id,
+      customer: billForm.customer.trim(),
+      customerId: billForm.customerId,
+      phone: billForm.phone.trim(),
+      whatsapp: billForm.whatsapp.trim(),
+      email: billForm.email.trim(),
+      address: billForm.address.trim(),
+      quotationId: billForm.quotationId,
+      item: items[0]?.item || "Upholstery service",
+      description: items[0]?.description || "Professional upholstery work",
+      items,
+      quantity: items.length === 1 ? items[0].quantity : items.reduce((sum, item) => sum + item.quantity, 0),
+      unitPrice: items.length === 1 ? items[0].unitPrice : 0,
+      subtotal,
+      discount: discountAmount,
+      vatRate: Number(billForm.vat || 0),
+      vat: vatAmount,
+      amount: billTotal,
+      total: billTotal,
+      paid: paidNow,
+      balance: billBalance,
+      paymentMethod: billForm.paymentMethod,
+      status: paidNow >= billTotal ? "Paid" : paidNow > 0 ? "Part Paid" : "Unpaid",
+      date: new Date().toISOString(),
+      work: "Upholstery service",
+      material: items.map((item) => item.item).join(", "),
+      progress: 100,
+      invoice_type: "invoice",
+    };
+  };
+
+  const createBill = async (shouldPrint = false) => {
+    if (saving) return;
+    if (!billForm.customer.trim()) return alert("Please search and select a customer, or enter a customer name.");
+    if (!billItems.some((item) => item.item.trim() && Number(item.unitPrice || 0) > 0)) return alert("Add at least one item with a unit price greater than 0.");
+
+    setSaving(true);
+    const bill = buildBill();
+
+    try {
+      let customerId = bill.customerId || null;
+
+      if (hasSupabase) {
+        if (!customerId && bill.phone) {
+          const existing = await supabase.from("customers").select("id").eq("phone", bill.phone).limit(1).maybeSingle();
+          customerId = existing.data?.id || null;
+        }
+
+        const customerData = {
+          name: bill.customer,
+          phone: bill.phone,
+          whatsapp: bill.whatsapp,
+          email: bill.email,
+          address: bill.address,
+          location: "Dubai",
+        };
+
+        if (customerId) {
+          const updated = await supabase.from("customers").update(customerData).eq("id", customerId);
+          if (updated.error) throw updated.error;
+        } else {
+          const created = await supabase.from("customers").insert({ ...customerData, jobs_count: 0, outstanding: 0 }).select("id").single();
+          if (created.error) throw created.error;
+          customerId = created.data.id;
+        }
+
+        const jobRow = {
+          job_number: bill.id,
+          invoice_id: bill.invoice_id,
+          customer_id: customerId,
+          customer_name: bill.customer,
+          phone: bill.phone,
+          whatsapp: bill.whatsapp,
+          email: bill.email,
+          address: bill.address,
+          item: bill.item,
+          description: bill.description,
+          work: bill.work,
+          material: bill.material,
+          items: bill.items,
+          quantity: bill.quantity,
+          unit_price: bill.unitPrice,
+          amount: bill.total,
+          total: bill.total,
+          subtotal: bill.subtotal,
+          discount: bill.discount,
+          vat_rate: bill.vatRate,
+          vat: bill.vat,
+          paid: bill.paid,
+          status: bill.status,
+          progress: 100,
+          notes: "Created from Billing",
+          payment_method: bill.paymentMethod,
+          quotation_id: bill.quotationId,
+          invoice_type: "invoice",
+        };
+
+        const saved = await supabase.from("jobs").insert(jobRow).select("*").single();
+        if (saved.error) throw saved.error;
+
+        if (paidNow > 0) {
+          const paymentRow = await supabase.from("payments").insert({
+            job_id: saved.data.id,
+            customer_id: customerId,
+            customer: bill.customer,
+            amount: paidNow,
+            payment_method: bill.paymentMethod,
+            paid_at: bill.date,
+            notes: `Invoice ${bill.id}`,
+          }).select("*").single();
+          if (paymentRow.error) throw paymentRow.error;
+
+          const transaction = await supabase.from("transactions").insert({
+            transaction_type: "Income",
+            description: `Invoice · ${bill.customer} · ${bill.id}`,
+            amount: paidNow,
+            account: bill.paymentMethod,
+            job_id: saved.data.id,
+            customer_id: customerId,
+            payment_id: paymentRow.data.id,
+            transaction_date: bill.date,
+          });
+          if (transaction.error) throw transaction.error;
+        }
+
+        await supabase.from("audit_logs").insert({
+          action: "Created invoice",
+          entity_type: "invoice",
+          entity_id: saved.data.id,
+          details: { invoice_id: bill.id, total: bill.total },
+        });
+      }
+
+      setJobs?.((items) => [bill, ...(Array.isArray(items) ? items : [])]);
+      if (paidNow > 0) {
+        setPayments?.((items) => [{ id: `PAY-${Date.now()}`, bill_id: bill.id, job_id: bill.id, customer: bill.customer, amount: paidNow, payment_method: bill.paymentMethod, paid_at: bill.date }, ...(Array.isArray(items) ? items : [])]);
+        setTransactions?.((items) => [{ id: `TX-${Date.now()}`, transaction_type: "Income", description: `Invoice · ${bill.customer} · ${bill.id}`, amount: paidNow, account: bill.paymentMethod, transaction_date: bill.date }, ...(Array.isArray(items) ? items : [])]);
+      }
+
+      setShowBillBuilder(false);
+      setSelected(bill);
+      setPostPrintBill(bill);
+      resetBillForm();
+
+      if (shouldPrint) {
+        window.setTimeout(() => {
+          document.body.classList.add("printing-invoice");
+          window.print();
+          window.setTimeout(() => document.body.classList.remove("printing-invoice"), 500);
+        }, 250);
+      }
+    } catch (error) {
+      console.error("Invoice creation failed", error);
+      alert(`Bill was not saved: ${error?.message || "database error"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const billMessage = (bill) => [
     "AL KANZ UPHOLSTERY",
     `Invoice: ${bill.id}`,
     `Customer: ${bill.customer}`,
-    `Item: ${bill.item}`,
+    ...(bill.items || []).map((item, index) => `${index + 1}. ${item.item} × ${item.quantity} = ${money(item.amount)}`),
     `Total: ${money(bill.total)}`,
     `Paid: ${money(bill.paid)}`,
     `Balance: ${money(bill.balance)}`,
@@ -2508,313 +2810,171 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
 
   const shareBill = async (bill, channel) => {
     const message = billMessage(bill);
-    const phone = String(bill.whatsapp || bill.phone || "").replace(/\D/g, "");
-    try { await navigator.clipboard?.writeText(message); } catch {}
-    if (channel === "whatsapp") {
-      if (!phone) return alert("No WhatsApp number saved for this customer.");
-      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-    } else if (channel === "botim") {
-      window.open("https://botim.me/", "_blank", "noopener,noreferrer");
-      alert("Bill message copied. Paste it into the customer's Botim chat.");
-    } else if (channel === "phone") {
-      if (!bill.phone) return alert("No phone number saved for this customer.");
+    if (channel === "phone") {
+      if (!bill.phone) return alert("No phone number saved.");
       window.location.href = `tel:${bill.phone}`;
-    } else if (channel === "sms") {
-      if (!bill.phone) return alert("No phone number saved for this customer.");
-      window.location.href = `sms:${bill.phone}?body=${encodeURIComponent(message)}`;
-    } else if (channel === "email") {
-      if (!bill.email) return alert("No email saved for this customer.");
-      window.location.href = `mailto:${bill.email}?subject=${encodeURIComponent(`Al Kanz Invoice ${bill.id}`)}&body=${encodeURIComponent(message)}`;
-    } else if (channel === "copy") {
-      alert("Bill message copied to clipboard.");
+      return;
     }
-  };
-
-  const createBill = async (shouldPrint = false) => {
-    if (!billForm.customer.trim()) return alert("Please select or enter the customer name.");
-    if (!lineItems.some((item) => item.item.trim() && item.amount > 0)) return alert("Add at least one item with a quantity and unit price.");
-    if (billTotal <= 0) return alert("Enter a unit price greater than 0.");
-
-    const bill = {
-      id: `INV-${String(Date.now()).slice(-7)}`,
-      customer: billForm.customer.trim(), customerId: billForm.customerId || "",
-      phone: billForm.phone.trim(), whatsapp: billForm.whatsapp.trim(), email: billForm.email.trim(), address: billForm.address.trim(),
-      item: lineItems.filter((x) => x.item.trim()).map((x) => x.item.trim()).join(", "),
-      description: lineItems.filter((x) => x.description.trim()).map((x) => x.description.trim()).join(" · "),
-      items: lineItems.filter((x) => x.item.trim()), quantity: lineItems.reduce((sum, x) => sum + x.quantity, 0),
-      unitPrice: lineItems.length === 1 ? lineItems[0].unitPrice : 0, quotationId: billForm.quotationId || "",
-      discount: discountAmount, vatRate: Number(billForm.vat || 0), vat: vatAmount, amount: billTotal, total: billTotal,
-      paid: paidNow, balance: billBalance, paymentMethod: billForm.paymentMethod,
-      status: paidNow >= billTotal ? "Paid" : paidNow > 0 ? "Part Paid" : "Unpaid", date: new Date().toISOString(),
-      work: billForm.description.trim() || "Upholstery service", material: lineItems.map(x=>x.item).join(", "), progress: 0,
-    };
-
-    // Optimistic UI update so the bill appears immediately. The same record is then
-    // persisted to the Appwrite-backed compatibility tables below.
-    if (setJobs) setJobs((prev) => [bill, ...(Array.isArray(prev) ? prev : [])]);
-    if (setPayments && paidNow > 0) setPayments((prev) => [{ id:`PAY-${Date.now()}`, bill_id:bill.id, customer:bill.customer, amount:paidNow, payment_method:bill.paymentMethod, paid_at:bill.date }, ...(Array.isArray(prev)?prev:[])]);
-    if (setTransactions && paidNow > 0) setTransactions((prev) => [{ id:`TX-${Date.now()}`, transaction_type:"Income", description:`Invoice · ${bill.customer} · ${bill.id}`, amount:paidNow, account:bill.paymentMethod, transaction_date:bill.date }, ...(Array.isArray(prev)?prev:[])]);
-
-    if (hasSupabase) {
-      try {
-        let customerRow = null;
-        if (bill.customerId) {
-          const found = await supabase.from("customers").select("*").eq("id", bill.customerId).maybeSingle();
-          customerRow = found.data || null;
-        }
-        if (!customerRow && bill.phone) {
-          const found = await supabase.from("customers").select("*").eq("phone", bill.phone).maybeSingle();
-          customerRow = found.data || null;
-        }
-        if (!customerRow) {
-          const created = await supabase.from("customers").insert({
-            name: bill.customer, phone: bill.phone, whatsapp: bill.whatsapp, email: bill.email,
-            address: bill.address, location: bill.address || "Dubai", notes: "Created from billing", jobs_count: 0, outstanding: 0,
-          }).select("*").single();
-          if (created.error) throw created.error;
-          customerRow = created.data;
-        } else {
-          const updated = await supabase.from("customers").update({ name:bill.customer, phone:bill.phone || customerRow.phone, whatsapp:bill.whatsapp || customerRow.whatsapp || bill.phone, email:bill.email || customerRow.email, address:bill.address || customerRow.address, location:customerRow.location || "Dubai" }).eq("id", customerRow.id).select("*").maybeSingle();
-          if (updated.error) throw updated.error;
-          customerRow = updated.data || customerRow;
-        }
-        bill.customerId = customerRow.id || bill.customerId;
-
-        const jobSaved = await supabase.from("jobs").insert({
-          job_number: bill.id, customer_id: bill.customerId, customer_name: bill.customer, phone: bill.phone, item: bill.item,
-          description: bill.description, work: bill.work, material: bill.material, quantity: bill.quantity, amount: bill.total, paid: bill.paid,
-          discount: bill.discount, status: "Received", progress: 0, notes: `Invoice ${bill.id}${bill.quotationId ? ` · Quotation ${bill.quotationId}` : ""}`,
-        }).select("*").single();
-        if (jobSaved.error) throw jobSaved.error;
-
-        await supabase.from("invoices").insert({
-          invoice_number: bill.id, customer_id: bill.customerId, job_id: jobSaved.data.id, quotation_id: bill.quotationId || "",
-          items: bill.items, subtotal, discount: bill.discount, vat: bill.vat, total: bill.total, paid: bill.paid, balance: bill.balance,
-          status: bill.status, payment_method: bill.paymentMethod, invoice_date: bill.date,
-        });
-        if (paidNow > 0) {
-          const paymentSaved = await supabase.from("payments").insert({ job_id: jobSaved.data.id, customer_id: bill.customerId, amount: paidNow, payment_method: bill.paymentMethod, notes:`Invoice ${bill.id}`, paid_at:bill.date }).select("*").single();
-          if (paymentSaved.error) throw paymentSaved.error;
-          await supabase.from("transactions").insert({ transaction_type:"Income", description:`Invoice · ${bill.customer} · ${bill.id}`, amount:paidNow, account:bill.paymentMethod, job_id:jobSaved.data.id, customer_id:bill.customerId, payment_id:paymentSaved.data.id, transaction_date:bill.date });
-        }
-        await supabase.from("customers").update({ outstanding: Math.max(0, Number(customerRow.outstanding || 0) + bill.balance), jobs_count: Number(customerRow.jobs_count || 0) + 1 }).eq("id", bill.customerId);
-      } catch (error) {
-        console.error("Invoice cloud sync failed:", error);
-        alert("Bill created, but cloud sync failed. Check Appwrite and try again; the bill remains visible locally.");
+    if (channel === "email") {
+      if (!bill.email) return alert("No email saved.");
+      window.location.href = `mailto:${bill.email}?subject=${encodeURIComponent(`Al Kanz Invoice ${bill.id}`)}&body=${encodeURIComponent(message)}`;
+      return;
+    }
+    if (channel === "whatsapp") {
+      const phone = String(bill.whatsapp || bill.phone || "").replace(/\D/g, "");
+      if (!phone) return alert("No WhatsApp number saved.");
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (channel === "copy") {
+      await navigator.clipboard?.writeText(message);
+      alert("Invoice summary copied.");
+      return;
+    }
+    if (channel === "share") {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+      doc.setFontSize(18);
+      doc.text("AL KANZ UPHOLSTERY", 20, 22);
+      doc.setFontSize(10);
+      doc.text(`TAX INVOICE · ${bill.id}`, 20, 30);
+      doc.text(`Customer: ${bill.customer}`, 20, 40);
+      let y = 55;
+      (bill.items || []).forEach((item) => { doc.text(`${item.item} | ${item.quantity} × ${money(item.unitPrice)} = ${money(item.amount)}`, 20, y); y += 7; });
+      y += 8;
+      doc.text(`Subtotal: ${money(bill.subtotal)}`, 130, y); y += 7;
+      doc.text(`VAT: ${money(bill.vat)}`, 130, y); y += 7;
+      doc.text(`TOTAL: ${money(bill.total)}`, 130, y); y += 7;
+      doc.text(`Balance: ${money(bill.balance)}`, 130, y);
+      const blob = doc.output("blob");
+      const file = new File([blob], `${bill.id}.pdf`, { type: "application/pdf" });
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({ title: `Al Kanz Invoice ${bill.id}`, text: `${bill.customer} · ${money(bill.total)}`, files: [file] });
+      } else {
+        doc.save(`${bill.id}.pdf`);
+        alert("This browser cannot share a PDF file directly. The PDF was saved instead.");
       }
     }
-
-    setShowBillBuilder(false); setSelected(bill); resetBillForm();
-    if (shouldPrint) {
-      setBillPrinting(true); setBillRun((n) => n + 1); setPostPrintBill(bill);
-      window.setTimeout(() => { document.body.classList.add("printing-invoice"); window.print(); window.setTimeout(() => document.body.classList.remove("printing-invoice"), 400); }, 80);
-      window.setTimeout(() => setBillPrinting(false), 900);
-    }
   };
 
-  const startBillPrint = () => openBillBuilder();
+  const InvoicePaper = ({ bill }) => (
+    <div className="invoice-paper-screen">
+      <div className="bill-template-header">
+        <div className="bill-brand-lockup">
+          <div className="bill-brand-mark">AK</div>
+          <div><strong>AL KANZ</strong><span>UPHOLSTERY</span><small>Premium upholstery &amp; restoration</small></div>
+        </div>
+        <div className="bill-title-block"><span>TAX INVOICE</span><strong>{bill.id}</strong><small>{bill.date ? new Date(bill.date).toLocaleDateString("en-AE") : "—"}</small></div>
+      </div>
+      <div className="bill-accent-line" />
+      <div className="bill-company-strip"><span>Dubai, United Arab Emirates</span><span>Upholstery · Repair · Custom Work</span></div>
+      <div className="bill-parties">
+        <div className="bill-party"><small>BILL TO</small><strong>{bill.customer}</strong><span>{bill.phone || "Phone not provided"}</span><span>{bill.email || "Email not provided"}</span><span>{bill.address || "Dubai, UAE"}</span></div>
+        <div className="bill-party bill-party-right"><small>PAYMENT STATUS</small><strong>{bill.status}</strong><span>Payment method: {bill.paymentMethod || "—"}</span><span>Quotation: {bill.quotationId || "Not linked"}</span></div>
+      </div>
+      <div className="bill-items-table">
+        <div className="bill-items-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>AMOUNT</span></div>
+        {(bill.items || []).map((item, index) => (
+          <div className="bill-items-row" key={`${bill.id}-${index}`}>
+            <div><strong>{item.item}</strong><span>{item.description || "Professional upholstery work"}</span></div>
+            <span>{item.quantity}</span><span>{money(item.unitPrice)}</span><strong>{money(item.amount)}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="bill-bottom-grid">
+        <div className="bill-thanks"><span>THANK YOU</span><strong>Thank you for choosing Al Kanz Upholstery.</strong><p>Please keep this invoice for your records. We appreciate your business.</p></div>
+        <div className="bill-total-box"><div><span>SUBTOTAL</span><strong>{money(bill.subtotal)}</strong></div><div><span>DISCOUNT</span><strong>- {money(bill.discount)}</strong></div><div><span>VAT</span><strong>{money(bill.vat)}</strong></div><div className="bill-grand-total"><span>TOTAL</span><strong>{money(bill.total)}</strong></div><div><span>PAID</span><strong>{money(bill.paid)}</strong></div><div className="bill-balance"><span>BALANCE DUE</span><strong>{money(bill.balance)}</strong></div></div>
+      </div>
+      <div className="bill-template-footer"><span>AL KANZ UPHOLSTERY</span><span>Dubai, UAE</span><span>Thank you for your trust.</span></div>
+    </div>
+  );
 
   return (
     <>
-      <PageTitle eyebrow="BILLING · UAE" title={page === "Billing" ? "Billing" : page} subtitle="Invoices, payments and customer billing in AED." />
-      <div className="billing-action-strip">
-        <div><span>PRINT CENTER</span><strong>Separate document controls</strong><small>Print invoices and customer receipts independently.</small></div>
-        <div><button type="button" className="secondary-button" onClick={()=>window.print()}><Printer size={14}/> Print current view</button><button type="button" className="secondary-button" onClick={()=>window.print()}><ReceiptText size={14}/> Print receipt</button></div>
-      </div>
+      <PageTitle eyebrow="BILLING · UAE" title={page === "Billing" ? "Billing" : page} subtitle="Create, save, print and share professional invoices." />
 
       {page === "Billing" && (
-        <div className={`billing-machine ${billPrinting ? "is-printing" : ""}`} key={billRun}>
-          <div className="billing-machine-screen">
-            <div className="machine-topline"><span>AL KANZ BILLING TERMINAL</span><b><i /> ONLINE</b></div>
-            <div className="machine-main">
-              <div className="bill-create-panel">
-                <small>CREATE BILL</small>
-                <strong>{money(totalPaid)}</strong>
-                <span>{invoices.length} invoices · {money(outstanding)} outstanding</span>
-                <button type="button" className="create-bill-button" onClick={openBillBuilder}>
-                  <ReceiptText size={15} /> Create & Print Bill
-                </button>
-              </div>
-              <div className="machine-ring" style={{ "--billing-progress": `${collectedPercent}%` }}>
-                <div><b>{Math.round(collectedPercent)}%</b><span>collected</span></div>
-              </div>
-            </div>
-            <div className="billing-flow" aria-hidden="true">
-              <div className="billing-flow-step active">
-                <div className="flow-icon"><FileText size={18}/></div>
-                <span>1 · BILL CREATED</span>
-              </div>
-              <div className="billing-flow-line"><i/><i/><i/></div>
-              <div className="billing-flow-step">
-                <div className="flow-icon printer"><Printer size={19}/></div>
-                <span>2 · SEND TO PRINTER</span>
-              </div>
-              <div className="billing-flow-line"><i/><i/><i/></div>
-              <div className="billing-flow-step">
-                <div className="flow-icon paper"><ReceiptText size={18}/></div>
-                <span>3 · RECEIPT READY</span>
-              </div>
-            </div>
-            <div className="machine-scanline" />
+        <>
+          <div className="billing-action-strip">
+            <div><span>INVOICE CENTER</span><strong>Fast multi-item billing</strong><small>Search customers and select saved materials. Prices fill automatically.</small></div>
+            <button type="button" className="primary-button" onClick={openBillBuilder}><Plus size={15} /> New Bill</button>
           </div>
-          <div className="billing-machine-receipt">
-            <div className="receipt-printer">
-              <div className="printer-top"><span className="printer-light" /><span>AL KANZ PRINTER</span></div>
-              <div className="printer-slot">
-                <div className="printed-paper">
-                  <strong>AL KANZ</strong><span>UPHOLSTERY BILL</span><i />
-                  <small>Customer invoice · AED</small><b>{money(totalPaid)}</b>
-                </div>
+          <div className="quotation-performance-bar">
+            <div><small>QUOTATION PERFORMANCE</small><strong>{quotationStats.approved}/{quotationStats.total} approved</strong></div>
+            <div><span>Quoted value</span><strong>{money(quotationStats.value)}</strong></div>
+            <div><span>Approval rate</span><strong>{quotationStats.total ? Math.round(quotationStats.approved / quotationStats.total * 100) : 0}%</strong></div>
+          </div>
+          <div className="billing-machine">
+            <div className="billing-machine-screen">
+              <div className="machine-topline"><span>AL KANZ BILLING TERMINAL</span><b><i /> ONLINE</b></div>
+              <div className="machine-main">
+                <div className="bill-create-panel"><small>COLLECTED</small><strong>{money(totalPaid)}</strong><span>{invoices.length} invoices · {money(outstanding)} outstanding</span><button type="button" className="create-bill-button" onClick={openBillBuilder}><ReceiptText size={15} /> Create &amp; Print Bill</button></div>
+                <div className="machine-ring" style={{ "--billing-progress": `${collectionRate}%` }}><div><b>{Math.round(collectionRate)}%</b><span>collected</span></div></div>
               </div>
             </div>
-            <span className="receipt-caption">PAYMENT RECEIPT</span>
-            <strong>{billPrinting ? "Printing your bill..." : "Ready for billing"}</strong>
-            <div className="receipt-line"><i /> <i /> <i /></div>
-            <small>Bill data travels to the printer as an animated wave, then the receipt rolls out.</small>
           </div>
-          <div className="machine-status"><span /> {billPrinting ? "Printing bill" : "Payment system ready"} <b>· AED</b></div>
-        </div>
+        </>
       )}
 
-      <div className="billing-quote-strip">
-        <div><small>QUOTATION PIPELINE</small><strong>{quotations.length}</strong><span>saved quotations</span></div>
-        <div><small>QUOTED VALUE</small><strong>{money(quotations.reduce((a,q)=>a+Number(q.amount||0),0))}</strong><span>total quoted</span></div>
-        <div><small>APPROVED VALUE</small><strong>{money(quotations.filter(q=>q.status==="Approved").reduce((a,q)=>a+Number(q.amount||0),0))}</strong><span>approved quotations</span></div>
-        <div><small>CONVERSION</small><strong>{quotations.length?Math.round((quotations.filter(q=>q.status==="Approved").length/quotations.length)*100):0}%</strong><span>quotation performance</span></div>
-      </div>
-      <div className="billing-stats">
-        <Stat icon={FileText} label="Invoices" value={invoices.length} note="workshop invoices" color="blue" />
-        <Stat icon={CircleDollarSign} label="Billed" value={money(invoices.reduce((a,b)=>a+b.amount,0))} note="total invoiced" color="green" />
-        <Stat icon={CreditCard} label="Collected" value={money(totalPaid)} note="customer payments" color="purple" />
-        <Stat icon={AlertCircle} label="Outstanding" value={money(outstanding)} note="pending collection" color="orange" />
-      </div>
-
-      {page === "Transactions" ? (
-        <div className="table-card billing-transactions-card">
-          <div className="transactions-title-row">
-            <div>
-              <span className="eyebrow">LEDGER</span>
-              <h2>All Transactions</h2>
-              <p>Income, expenses and transfers recorded by the workshop.</p>
-            </div>
-            <span className="transaction-count">{safeTransactions.length || safePayments.length} records</span>
-          </div>
-          <div className="table-head transaction-head"><span>DATE</span><span>DESCRIPTION</span><span>TYPE</span><span>ACCOUNT</span><span>AMOUNT</span></div>
-          {(safeTransactions.length ? transactions : safePayments.map((pay, i) => ({
-            id: pay.id || `payment-${i}`,
-            transaction_date: pay.paid_at,
-            description: pay.notes || `Payment · ${pay.customer || "Customer"}`,
-            transaction_type: "Income",
-            account: pay.payment_method || "Cash",
-            amount: pay.amount
-          }))).length ? (safeTransactions.length ? transactions : safePayments.map((pay, i) => ({
-            id: pay.id || `payment-${i}`, transaction_date: pay.paid_at, description: pay.notes || `Payment · ${pay.customer || "Customer"}`, transaction_type: "Income", account: pay.payment_method || "Cash", amount: pay.amount
-          }))).map((tx, i) => (
-            <div className="table-row transaction-row" key={tx.id || i}>
-              <span>{tx.transaction_date ? new Date(tx.transaction_date).toLocaleDateString("en-AE") : "—"}</span>
-              <strong>{tx.description || "Workshop transaction"}</strong>
-              <Status status={tx.transaction_type || "Income"} />
-              <span>{tx.account || "Cash"}</span>
-              <strong className={tx.transaction_type === "Expense" ? "expense" : "income"}>
-                {tx.transaction_type === "Expense" ? "-" : "+"}{money(tx.amount)}
-              </strong>
-            </div>
-          )) : <EmptyState icon={ReceiptText} title="No transactions yet" text="Customer payments, expenses and transfers will appear here." />}
-        </div>
-      ) : page !== "Payments" ? (
+      {page !== "Billing" && (
         <div className="table-card">
-          <div className="table-head invoice-head"><span>INVOICE</span><span>CUSTOMER</span><span>JOB / ITEM</span><span>AMOUNT</span><span>PAID</span><span>BALANCE</span><span>STATUS</span><span /></div>
-          {invoices.map((invoice) => (
-            <div className="table-row" key={invoice.id}>
-              <strong>{invoice.id}</strong>
-              <strong>{invoice.customer}</strong>
-              <div><strong>{invoice.jobId}</strong><small>{invoice.item}</small></div>
-              <strong>{money(invoice.amount)}</strong>
-              <strong>{money(invoice.paid)}</strong>
-              <strong>{money(invoice.balance)}</strong>
-              <Status status={invoice.status} />
-              <button className="row-action" onClick={() => setSelected(invoice)}><Eye size={16} /></button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="table-card">
-          <div className="table-head"><span>DATE</span><span>DESCRIPTION</span><span>METHOD</span><span>AMOUNT</span><span>REFERENCE</span></div>
-          {safePayments.length ? safePayments.map((pay, i) => (
-            <div className="table-row" key={pay.id || i}>
-              <span>{pay.paid_at ? new Date(pay.paid_at).toLocaleDateString("en-AE") : "—"}</span>
-              <strong>{pay.customer || pay.notes || "Customer Payment"}</strong>
-              <span>{pay.payment_method || "Cash"}</span>
-              <strong className="income">+{money(pay.amount)}</strong>
-              <span>{pay.reference || "—"}</span>
-            </div>
-          )) : <EmptyState icon={CreditCard} title="No payments yet" text="Payments recorded against jobs will appear here." />}
+          <div className="table-head"><span>INVOICE</span><span>CUSTOMER</span><span>ITEMS</span><span>AMOUNT</span><span>PAID</span><span>BALANCE</span><span>STATUS</span><span /></div>
+          {page === "Payments"
+            ? safePayments.map((paymentRow, index) => <div className="table-row" key={paymentRow.id || index}><span>{paymentRow.paid_at ? new Date(paymentRow.paid_at).toLocaleDateString("en-AE") : "—"}</span><strong>{paymentRow.customer || "Customer"}</strong><span>{paymentRow.payment_method || "Cash"}</span><strong className="income">+{money(paymentRow.amount)}</strong><span>{paymentRow.reference || "—"}</span></div>)
+            : invoices.map((invoice) => <div className="table-row" key={invoice.id}><strong>{invoice.id}</strong><strong>{invoice.customer}</strong><span>{invoice.items.length} item{invoice.items.length === 1 ? "" : "s"}</span><strong>{money(invoice.amount)}</strong><strong>{money(invoice.paid)}</strong><strong>{money(invoice.balance)}</strong><Status status={invoice.status} /><button type="button" className="row-action" onClick={() => setSelected(invoice)}><Eye size={16} /></button></div>)}
         </div>
       )}
 
       {showBillBuilder && (
         <div className="modal-backdrop bill-builder-backdrop">
-          <div className="bill-builder-modal">
+          <div className="bill-builder-modal bill-builder-modern">
             <div className="bill-builder-head">
-              <div><span className="eyebrow">AL KANZ UPHOLSTERY · BILLING</span><h2>Create new bill</h2><p>Build the invoice, review the total, then print and send it.</p></div>
-              <button type="button" className="job-drawer-close" onClick={() => setShowBillBuilder(false)}><X size={19}/></button>
+              <div><span className="eyebrow">AL KANZ · NEW INVOICE</span><h2>Create &amp; Print Bill</h2><p>Search the customer, choose saved materials, add unlimited items, link a quotation, then save.</p></div>
+              <button type="button" className="job-drawer-close" onClick={() => setShowBillBuilder(false)}><X size={19} /></button>
             </div>
+
             <div className="bill-builder-grid">
               <div className="bill-form-pane">
-                <div className="bill-section-title"><span>01</span><div><strong>Customer</strong><small>Customer contact details</small></div></div>
-                <label className="field"><span>Find saved customer</span>
-                  <div className="bill-customer-search"><Search size={15}/><input value={customerSearch} onChange={(e)=>setCustomerSearch(e.target.value)} placeholder="Search name, phone, WhatsApp or email..."/></div>
-                </label>
-                <div className="bill-customer-results">
-                  {(customers || []).filter(c => { const q=customerSearch.trim().toLowerCase(); return q && [c.name,c.phone,c.whatsapp,c.email,c.location].some(v=>String(v||"").toLowerCase().includes(q)); }).slice(0,6).map(c => <button type="button" key={c.id || c.$id} className={String(billForm.customerId)===String(c.id || c.$id)?"selected":""} onClick={()=>{selectBillCustomer(c.id || c.$id);setCustomerSearch(c.name || "");}}><span className="customer-avatar">{String(c.name||"C").split(" ").map(x=>x[0]).join("").slice(0,2)}</span><span><strong>{c.name || c.company}</strong><small>{c.phone || c.whatsapp || c.email || "No contact"}</small></span><ChevronRight size={14}/></button>)}
-                  {!customerSearch.trim() && <small className="bill-search-hint">Start typing to find an existing customer. No long dropdown list.</small>}
-                </div>
-                <div className="bill-fields two">
-                  <label className="field"><span>Customer *</span><input value={billForm.customer} onChange={(e)=>setBillForm({...billForm,customer:e.target.value})} placeholder="Customer / company"/></label>
-                  <label className="field"><span>Phone</span><input value={billForm.phone} onChange={(e)=>setBillForm({...billForm,phone:e.target.value})} placeholder="+971 50..."/></label>
-                </div>
-                <div className="bill-fields two">
-                  <label className="field"><span>WhatsApp</span><input value={billForm.whatsapp} onChange={(e)=>setBillForm({...billForm,whatsapp:e.target.value})} placeholder="+971 50..."/></label>
-                  <label className="field"><span>Email</span><input type="email" value={billForm.email} onChange={(e)=>setBillForm({...billForm,email:e.target.value})} placeholder="customer@email.com"/></label>
-                </div>
-                <label className="field"><span>Address</span><input value={billForm.address} onChange={(e)=>setBillForm({...billForm,address:e.target.value})} placeholder="Dubai, UAE"/></label>
+                <div className="bill-section-title"><span>01</span><div><strong>Customer</strong><small>Search by name, phone, WhatsApp or email.</small></div></div>
+                <label className="field"><span>Search saved customer</span><input autoFocus value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Start typing a customer name..." /></label>
+                {filteredCustomers.length > 0 && <div className="customer-search-results">{filteredCustomers.map((customer) => <button type="button" key={customer.id} className="customer-search-option" onClick={() => selectCustomer(customer)}><span className="customer-search-avatar">{String(customer.name || "C").split(" ").map((part) => part[0]).join("").slice(0,2).toUpperCase()}</span><span><strong>{customer.name || customer.company}</strong><small>{customer.phone || "No phone"} · {customer.email || "No email"}</small></span><ChevronRight size={15} /></button>)}</div>}
+                <div className="bill-fields two"><label className="field"><span>Customer *</span><input value={billForm.customer} onChange={(event) => setBillForm((form) => ({ ...form, customer:event.target.value }))} /></label><label className="field"><span>Phone</span><input value={billForm.phone} onChange={(event) => setBillForm((form) => ({ ...form, phone:event.target.value }))} /></label></div>
+                <div className="bill-fields two"><label className="field"><span>WhatsApp</span><input value={billForm.whatsapp} onChange={(event) => setBillForm((form) => ({ ...form, whatsapp:event.target.value }))} /></label><label className="field"><span>Email</span><input type="email" value={billForm.email} onChange={(event) => setBillForm((form) => ({ ...form, email:event.target.value }))} /></label></div>
+                <label className="field"><span>Address</span><input value={billForm.address} onChange={(event) => setBillForm((form) => ({ ...form, address:event.target.value }))} /></label>
 
-                <div className="bill-section-title" style={{marginTop:22}}><span>02</span><div><strong>Bill items</strong><small>Add as many materials or services as needed</small></div><button type="button" className="secondary-button bill-add-item" onClick={addBillItem}><Plus size={14}/> Add item</button></div>
-                <div className="bill-line-editor">
-                  {billForm.items.map((row, index) => <div className="bill-line-card" key={row.id}>
-                    <div className="bill-line-number">{String(index+1).padStart(2,"0")}</div>
-                    <label className="field"><span>Material / service</span><select value={row.materialId} onChange={(e)=>selectMaterial(row.id,e.target.value)}><option value="">Choose saved material...</option>{materials.map(m=><option key={m.id || m.$id} value={m.id || m.$id}>{m.name} · {money(m.price)}/{m.unit}</option>)}</select></label>
-                    <label className="field"><span>Description</span><input value={row.item} onChange={(e)=>updateBillItem(row.id,"item",e.target.value)} placeholder="Sofa upholstery / repair"/></label>
-                    <label className="field"><span>Notes</span><input value={row.description} onChange={(e)=>updateBillItem(row.id,"description",e.target.value)} placeholder="Colour, fabric, work details"/></label>
-                    <label className="field"><span>Qty</span><input type="number" min="0.01" step="0.01" value={row.quantity} onChange={(e)=>updateBillItem(row.id,"quantity",e.target.value)}/></label>
-                    <label className="field"><span>Unit price (AED)</span><input type="number" min="0" step="0.01" value={row.unitPrice} onChange={(e)=>updateBillItem(row.id,"unitPrice",e.target.value)}/></label>
-                    <div className="bill-line-total"><small>AMOUNT</small><strong>{money(row.amount)}</strong></div>
-                    <button type="button" className="delete-small" onClick={()=>removeBillItem(row.id)} disabled={billForm.items.length===1} title="Remove item"><Trash2 size={14}/></button>
-                  </div>)}
-                </div>
-                <label className="field"><span>Related quotation (optional)</span><select value={billForm.quotationId} onChange={e=>{const q=quotations.find(x=>String(x.id)===String(e.target.value));setBillForm(f=>({...f,quotationId:e.target.value,...(q?.customer?{}:{})}));}}><option value="">No quotation</option>{quotations.map(q=><option key={q.id} value={q.id}>{q.id} · {q.customer} · {money(q.amount)}</option>)}</select></label>
                 <div className="bill-fields two">
-                  <label className="field"><span>Discount (AED)</span><input type="number" min="0" step="0.01" value={billForm.discount} onChange={(e)=>setBillForm({...billForm,discount:e.target.value})}/></label>
-                  <label className="field"><span>VAT</span><select value={billForm.vat} onChange={(e)=>setBillForm({...billForm,vat:e.target.value})}><option value="0">0%</option><option value="5">5%</option></select></label>
+                  <label className="field"><span>Related quotation</span><select value={billForm.quotationId} onChange={(event) => applyQuotation(event.target.value)}><option value="">No quotation</option>{safeQuotations.map((quote) => <option key={quote.id} value={quote.id}>{quote.id} · {quote.customer} · {money(quote.amount)}</option>)}</select></label>
+                  <div className="quotation-mini-stat"><small>QUOTATION PERFORMANCE</small><strong>{quotationStats.total ? Math.round(quotationStats.approved / quotationStats.total * 100) : 0}%</strong><span>{quotationStats.approved} approved of {quotationStats.total}</span></div>
                 </div>
-                <div className="bill-fields three">
-                  <label className="field"><span>Paid now (AED)</span><input type="number" min="0" step="0.01" value={billForm.paid} onChange={(e)=>setBillForm({...billForm,paid:e.target.value})}/></label>
-                  <label className="field"><span>Payment method</span><select value={billForm.paymentMethod} onChange={(e)=>setBillForm({...billForm,paymentMethod:e.target.value})}><option>Cash</option><option>Card</option><option>Bank Transfer</option><option>Credit</option></select></label>
+
+                <div className="bill-section-title" style={{ marginTop:22 }}><span>02</span><div><strong>Bill items</strong><small>Pick a saved material to auto-fill its unit price.</small></div><button type="button" className="secondary-button" onClick={addItem}><Plus size={14} /> Add item</button></div>
+                <div className="bill-items-editor">
+                  {billItems.map((item, index) => (
+                    <div className="bill-editor-item" key={item.id}>
+                      <div className="bill-editor-number">{String(index + 1).padStart(2, "0")}</div>
+                      <div className="bill-editor-fields">
+                        <label className="field"><span>Material / service</span><select value={item.materialId} onChange={(event) => selectMaterial(index, event.target.value)}><option value="">Custom item</option>{safeMaterials.map((material) => <option key={material.id} value={material.id}>{material.name} · {money(material.price)} / {material.unit}</option>)}</select></label>
+                        <label className="field"><span>Description</span><input value={item.description} onChange={(event) => updateItem(index, "description", event.target.value)} placeholder="Work / material details" /></label>
+                        <div className="bill-fields three"><label className="field"><span>Qty</span><input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => updateItem(index, "quantity", event.target.value)} /></label><label className="field"><span>Unit price</span><input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateItem(index, "unitPrice", event.target.value)} /></label><label className="field"><span>Amount</span><input value={money(itemTotals[index])} readOnly /></label></div>
+                      </div>
+                      {billItems.length > 1 && <button type="button" className="row-action danger-action" onClick={() => removeItem(index)} title="Remove item"><Trash2 size={15} /></button>}
+                    </div>
+                  ))}
                 </div>
+
+                <div className="bill-fields three"><label className="field"><span>Discount</span><input type="number" min="0" value={billForm.discount} onChange={(event) => setBillForm((form) => ({ ...form, discount:event.target.value }))} /></label><label className="field"><span>VAT</span><select value={billForm.vat} onChange={(event) => setBillForm((form) => ({ ...form, vat:event.target.value }))}><option value="0">0%</option><option value="5">5%</option></select></label><label className="field"><span>Paid now</span><input type="number" min="0" max={billTotal} value={billForm.paid} onChange={(event) => setBillForm((form) => ({ ...form, paid:event.target.value }))} /></label></div>
+                <label className="field"><span>Payment method</span><select value={billForm.paymentMethod} onChange={(event) => setBillForm((form) => ({ ...form, paymentMethod:event.target.value }))}><option>Cash</option><option>Card</option><option>Bank Transfer</option><option>Credit</option></select></label>
               </div>
 
               <div className="bill-preview-pane">
                 <div className="invoice-preview">
-                  <div className="invoice-brand"><div><strong>AL KANZ</strong><span>UPHOLSTERY</span></div><b>INVOICE</b></div>
-                  <div className="invoice-preview-meta"><div><small>BILL TO</small><strong>{billForm.customer || "Customer name"}</strong><span>{billForm.phone || billForm.email || "Contact details"}</span><span>{billForm.address || "Dubai, UAE"}</span></div><div><small>DATE</small><strong>{new Date().toLocaleDateString("en-AE")}</strong><span>Due on receipt</span></div></div>
-                  <div className="invoice-preview-lines"><div className="invoice-preview-head"><span>DESCRIPTION</span><span>QTY</span><span>AMOUNT</span></div>{lineItems.map(row=><div className="invoice-item-preview" key={row.id}><div><strong>{row.item || "Upholstery service"}</strong><span>{row.description || "Professional upholstery work"}</span></div><span>{row.quantity}</span><strong>{money(row.amount)}</strong></div>)}</div>
+                  <div className="invoice-brand"><div><strong>AL KANZ</strong><span>UPHOLSTERY</span></div><b>TAX INVOICE</b></div>
+                  <div className="invoice-preview-meta"><div><small>BILL TO</small><strong>{billForm.customer || "Customer name"}</strong><span>{billForm.phone || billForm.email || "Contact details"}</span><span>{billForm.address || "Dubai, UAE"}</span></div><div><small>DATE</small><strong>{new Date().toLocaleDateString("en-AE")}</strong><span>{billForm.quotationId ? `Quote ${billForm.quotationId}` : "New invoice"}</span></div></div>
+                  <div className="invoice-preview-items">{billItems.filter((item) => item.item || item.unitPrice).map((item, index) => <div className="invoice-item-preview" key={item.id}><div><small>{String(index + 1).padStart(2, "0")} · DESCRIPTION</small><strong>{item.item || "Item"}</strong><span>{item.description || "Upholstery service"}</span></div><strong>{money(itemTotals[index])}</strong></div>)}</div>
                   <div className="invoice-totals"><span>Subtotal <b>{money(subtotal)}</b></span><span>Discount <b>- {money(discountAmount)}</b></span><span>VAT ({billForm.vat}%) <b>{money(vatAmount)}</b></span><strong>Total <b>{money(billTotal)}</b></strong><span>Paid now <b>{money(paidNow)}</b></span><span>Balance <b>{money(billBalance)}</b></span></div>
-                  <div className="invoice-note">Thank you for choosing <b>Al Kanz Upholstery</b>. Please keep this invoice for your records.</div>
+                  <div className="invoice-note">Thank you for choosing <b>Al Kanz Upholstery</b>. This invoice will be saved to the workshop database.</div>
                 </div>
-                <div className="bill-preview-actions">
-                  <button type="button" className="secondary-button" onClick={()=>createBill(false)}><Save size={16}/> Save Bill</button>
-                  <button type="button" className="primary-button" onClick={()=>createBill(true)}><Printer size={16}/> Create &amp; Print Bill</button>
-                </div>
+                <div className="bill-preview-actions"><button type="button" className="secondary-button" disabled={saving} onClick={() => createBill(false)}><Save size={16} /> {saving ? "Saving…" : "Save Bill"}</button><button type="button" className="primary-button" disabled={saving} onClick={() => createBill(true)}><Printer size={16} /> {saving ? "Creating…" : "Create & Print Bill"}</button></div>
               </div>
             </div>
           </div>
@@ -2822,134 +2982,54 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
       )}
 
       {postPrintBill && (
-        <div className="modal-backdrop post-print-backdrop">
+        <div className="modal-backdrop">
           <div className="card post-print-modal">
-            <div className="post-print-icon"><CheckCircle2 size={24}/></div>
+            <div className="post-print-icon"><CheckCircle2 size={24} /></div>
             <span className="eyebrow">BILL READY</span>
-            <h2>Invoice printed successfully</h2>
-            <p><strong>{postPrintBill.id}</strong> is saved. Send the bill directly to the customer.</p>
-            <div className="post-print-recipient"><div className="customer-avatar">{String(postPrintBill.customer||"C").split(" ").map(x=>x[0]).join("").slice(0,2)}</div><div><strong>{postPrintBill.customer}</strong><span>{postPrintBill.phone || "No phone"} · {postPrintBill.email || "No email"}</span></div></div>
-            <div className="post-print-actions">
-              <button type="button" className="share-btn whatsapp" onClick={()=>shareBill(postPrintBill,"whatsapp")}><MessageCircle size={17}/> WhatsApp</button>
-              <button type="button" className="share-btn botim" onClick={()=>shareBill(postPrintBill,"botim")}><MessageCircle size={17}/> Botim</button>
-              <button type="button" className="share-btn" onClick={()=>shareBill(postPrintBill,"phone")}><Phone size={17}/> Phone</button>
-              <button type="button" className="share-btn" onClick={()=>shareBill(postPrintBill,"sms")}><Smartphone size={17}/> SMS</button>
-              <button type="button" className="share-btn" onClick={()=>shareBill(postPrintBill,"email")}><Mail size={17}/> Email</button>
-              <button type="button" className="share-btn" onClick={()=>shareBill(postPrintBill,"copy")}><Copy size={17}/> Copy</button>
-            </div>
-            <div className="post-print-footer"><button type="button" className="secondary-button" onClick={()=>setPostPrintBill(null)}>Not now</button><button type="button" className="primary-button" onClick={()=>{setPostPrintBill(null);setSelected(postPrintBill);}}>Open invoice</button></div>
+            <h2>{postPrintBill.id}</h2>
+            <p>Saved successfully. Use the same invoice template for print, PDF or contact sharing.</p>
+            <div className="post-print-recipient"><strong>{postPrintBill.customer}</strong><span>{postPrintBill.phone || "No phone"} · {postPrintBill.email || "No email"}</span></div>
+            <div className="post-print-actions"><button type="button" className="share-btn whatsapp" onClick={() => shareBill(postPrintBill, "whatsapp")}><MessageCircle size={17} /> WhatsApp</button><button type="button" className="share-btn" onClick={() => shareBill(postPrintBill, "share")}><ReceiptText size={17} /> Share PDF</button><button type="button" className="share-btn" onClick={() => shareBill(postPrintBill, "phone")}><Phone size={17} /> Phone</button><button type="button" className="share-btn" onClick={() => shareBill(postPrintBill, "email")}><Mail size={17} /> Email</button></div>
+            <div className="post-print-footer"><button type="button" className="secondary-button" onClick={() => setPostPrintBill(null)}>Close</button><button type="button" className="primary-button" onClick={() => setSelected(postPrintBill)}><Eye size={16} /> Open Invoice</button></div>
           </div>
         </div>
       )}
-
-      <div className="print-invoice-sheet">
-        <div className="bill-template-header">
-          <div className="bill-brand-lockup"><div className="bill-brand-mark">AK</div><div><strong>AL KANZ</strong><span>UPHOLSTERY</span><small>Premium upholstery &amp; restoration</small></div></div>
-          <div className="bill-title-block"><span>TAX INVOICE</span><strong>{postPrintBill?.id || "—"}</strong><small>{postPrintBill ? new Date(postPrintBill.date).toLocaleDateString("en-AE") : ""}</small></div>
-        </div>
-        <div className="bill-accent-line"/>
-        <div className="bill-company-strip"><span>Dubai, United Arab Emirates</span><span>Upholstery · Repair · Custom Work</span></div>
-        <div className="bill-parties">
-          <div className="bill-party"><small>BILL TO</small><strong>{postPrintBill?.customer || "Customer"}</strong><span>{postPrintBill?.phone || "Phone not provided"}</span><span>{postPrintBill?.email || "Email not provided"}</span><span>{postPrintBill?.address || "Dubai, UAE"}</span></div>
-          <div className="bill-party bill-party-right"><small>PAYMENT STATUS</small><strong>{postPrintBill?.status || "Unpaid"}</strong><span>Payment method: {postPrintBill?.paymentMethod || "—"}</span><span>Invoice date: {postPrintBill ? new Date(postPrintBill.date).toLocaleDateString("en-AE") : "—"}</span></div>
-        </div>
-        <div className="bill-items-table">
-          <div className="bill-items-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>AMOUNT</span></div>
-          {(postPrintBill?.items?.length ? postPrintBill.items : [{item:postPrintBill?.item || "Upholstery service",description:postPrintBill?.description || "Professional upholstery work",quantity:postPrintBill?.quantity || 1,unitPrice:postPrintBill?.unitPrice || 0,amount:(postPrintBill?.quantity || 1)*(postPrintBill?.unitPrice || 0)}]).map((row,i)=><div className="bill-items-row" key={row.id || i}><div><strong>{row.item}</strong><span>{row.description || "Professional upholstery work"}</span></div><span>{row.quantity}</span><span>{money(row.unitPrice)}</span><strong>{money(row.amount || Number(row.quantity||0)*Number(row.unitPrice||0))}</strong></div>)}
-        </div>
-        <div className="bill-bottom-grid">
-          <div className="bill-thanks"><span>THANK YOU</span><strong>Thank you for choosing Al Kanz Upholstery.</strong><p>Please keep this invoice for your records. We appreciate your business.</p></div>
-          <div className="bill-total-box"><div><span>Subtotal</span><strong>{money((postPrintBill?.quantity || 1) * (postPrintBill?.unitPrice || 0))}</strong></div><div><span>Discount</span><strong>- {money(postPrintBill?.discount || 0)}</strong></div><div><span>VAT</span><strong>{money(postPrintBill?.vat || 0)}</strong></div><div className="bill-grand-total"><span>TOTAL</span><strong>{money(postPrintBill?.total || 0)}</strong></div><div><span>Paid</span><strong>{money(postPrintBill?.paid || 0)}</strong></div><div className="bill-balance"><span>Balance Due</span><strong>{money(postPrintBill?.balance || 0)}</strong></div></div>
-        </div>
-        <div className="bill-template-footer"><span>AL KANZ UPHOLSTERY</span><span>Dubai, UAE</span><span>Thank you for your trust.</span></div>
-      </div>
 
       {selected && (
         <div className="modal-backdrop">
           <div className="invoice-detail-modal">
-            <div className="invoice-detail-toolbar">
-              <div><span className="eyebrow">INVOICE DETAILS</span><strong>{selected.id}</strong></div>
-              <button className="job-drawer-close" onClick={()=>setSelected(null)}><X size={20}/></button>
-            </div>
-            <div className="invoice-paper-screen">
-              <div className="bill-template-header">
-                <div className="bill-brand-lockup"><div className="bill-brand-mark">AK</div><div><strong>AL KANZ</strong><span>UPHOLSTERY</span><small>Premium upholstery &amp; restoration</small></div></div>
-                <div className="bill-title-block"><span>TAX INVOICE</span><strong>{selected.id}</strong><small>{selected.date ? new Date(selected.date).toLocaleDateString("en-AE") : "—"}</small></div>
-              </div>
-              <div className="bill-accent-line"/>
-              <div className="bill-company-strip"><span>Dubai, United Arab Emirates</span><span>Upholstery · Repair · Custom Work</span></div>
-              <div className="bill-parties">
-                <div className="bill-party"><small>BILL TO</small><strong>{selected.customer || "Customer"}</strong><span>{selected.phone || "Phone not provided"}</span><span>{selected.email || "Email not provided"}</span><span>{selected.address || "Dubai, UAE"}</span></div>
-                <div className="bill-party bill-party-right"><small>PAYMENT STATUS</small><strong>{selected.status || (Number(selected.balance||0) <= 0 ? "Paid" : Number(selected.paid||0) > 0 ? "Part Paid" : "Unpaid")}</strong><span>Payment method: {selected.paymentMethod || "—"}</span><span>Job reference: {selected.jobId || "—"}</span></div>
-              </div>
-              <div className="bill-items-table">
-                <div className="bill-items-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>AMOUNT</span></div>
-                {(selected.items?.length ? selected.items : [{item:selected.item || "Upholstery service",description:selected.work || selected.description || "Professional upholstery work",quantity:selected.quantity || 1,unitPrice:selected.unitPrice || 0,amount:(selected.quantity || 1)*(selected.unitPrice || 0) || selected.amount || selected.total || 0}]).map((row,i)=><div className="bill-items-row" key={row.id || i}><div><strong>{row.item}</strong><span>{row.description || "Professional upholstery work"}</span></div><span>{row.quantity}</span><span>{money(row.unitPrice)}</span><strong>{money(row.amount || Number(row.quantity||0)*Number(row.unitPrice||0))}</strong></div>)}
-              </div>
-              <div className="bill-bottom-grid">
-                <div className="bill-thanks"><span>THANK YOU</span><strong>Thank you for choosing Al Kanz Upholstery.</strong><p>Please keep this invoice for your records. We appreciate your business.</p></div>
-                <div className="bill-total-box"><div><span>Subtotal</span><strong>{money((selected.quantity || 1) * (selected.unitPrice || 0) || selected.amount || selected.total || 0)}</strong></div><div><span>Discount</span><strong>- {money(selected.discount || 0)}</strong></div><div><span>VAT</span><strong>{money(selected.vat || 0)}</strong></div><div className="bill-grand-total"><span>TOTAL</span><strong>{money(selected.total || selected.amount || 0)}</strong></div><div><span>Paid</span><strong>{money(selected.paid || 0)}</strong></div><div className="bill-balance"><span>Balance Due</span><strong>{money(selected.balance || 0)}</strong></div></div>
-              </div>
-              <div className="bill-template-footer"><span>AL KANZ UPHOLSTERY</span><span>Dubai, UAE</span><span>Thank you for your trust.</span></div>
-            </div>
-            <div className="invoice-contact-card">
-              <div><span>PHONE</span><strong>{selected.phone || "Not saved"}</strong></div>
-              <div><span>WHATSAPP</span><strong>{selected.whatsapp || selected.phone || "Not saved"}</strong></div>
-              <div><span>EMAIL</span><strong>{selected.email || "Not saved"}</strong></div>
-            </div>
-            <div className="invoice-share-center">
-              <div className="share-center-head"><div><span className="eyebrow">SEND INVOICE</span><strong>Choose a delivery channel</strong><small>Send the invoice using the customer's saved contact details.</small></div></div>
-              <div className="post-print-actions">
-                <button type="button" className="share-btn whatsapp" onClick={()=>shareBill(selected,"whatsapp")}><MessageCircle size={17}/> WhatsApp PDF</button>
-                <button type="button" className="share-btn botim" onClick={()=>shareBill(selected,"botim")}><MessageCircle size={17}/> Botim PDF</button>
-                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"phone")}><Phone size={17}/> Call</button>
-                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"sms")}><Smartphone size={17}/> SMS</button>
-                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"email")}><Mail size={17}/> Email PDF</button>
-                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"copy")}><Copy size={17}/> Copy</button>
-              </div>
-            </div>
-            <div className="invoice-modal-actions">
-              {selected.balance > 0 && recordPayment && (<><label className="field invoice-payment-field"><span>Record payment</span><input type="number" min="0" max={selected.balance} value={payment} onChange={e=>setPayment(e.target.value)} placeholder="AED 0.00" /></label><button className="primary-button" onClick={()=>{ recordPayment(selected.jobId, payment); setPayment(""); setSelected(null); }}><CreditCard size={16}/> Save Payment</button></>)}
-              <button className="secondary-button" onClick={()=>window.print()}><Printer size={16}/> Print Invoice</button>
-              <button className="secondary-button" onClick={()=>setSelected(null)}>Close</button>
-            </div>
+            <div className="invoice-detail-toolbar"><div><span className="eyebrow">INVOICE DETAILS</span><strong>{selected.id}</strong></div><button type="button" className="job-drawer-close" onClick={() => setSelected(null)}><X size={20} /></button></div>
+            <InvoicePaper bill={selected} />
+            <div className="invoice-contact-card"><div><small>PHONE</small><strong>{selected.phone || "Not saved"}</strong></div><div><small>WHATSAPP</small><strong>{selected.whatsapp || selected.phone || "Not saved"}</strong></div><div><small>EMAIL</small><strong>{selected.email || "Not saved"}</strong></div></div>
+            <div className="invoice-share-center"><div className="share-center-head"><div><span className="eyebrow">SEND INVOICE</span><strong>Same invoice · multiple channels</strong><small>WhatsApp opens the saved customer chat. Share PDF uses the device share sheet when supported.</small></div></div><div className="post-print-actions"><button type="button" className="share-btn whatsapp" onClick={() => shareBill(selected, "whatsapp")}><MessageCircle size={17} /> WhatsApp</button><button type="button" className="share-btn" onClick={() => shareBill(selected, "share")}><ReceiptText size={17} /> Share PDF</button><button type="button" className="share-btn" onClick={() => shareBill(selected, "phone")}><Phone size={17} /> Call</button><button type="button" className="share-btn" onClick={() => shareBill(selected, "email")}><Mail size={17} /> Email</button></div></div>
+            <div className="invoice-modal-actions"><button type="button" className="secondary-button" onClick={() => { setPostPrintBill(null); setSelected(null); }}>Close</button><button type="button" className="secondary-button" onClick={() => window.print()}><Printer size={16} /> Print Invoice</button>{Number(selected.balance || 0) > 0 && <><label className="field invoice-payment-field"><span>Record payment</span><input type="number" min="0" max={selected.balance} value={payment} onChange={(event) => setPayment(event.target.value)} /></label><button type="button" className="primary-button" onClick={() => { recordPayment(selected.jobId || selected.id, payment); setPayment(""); setSelected(null); }}><CircleDollarSign size={16} /> Save Payment</button></>}</div>
           </div>
         </div>
       )}
 
+      <div className="print-invoice-sheet">{postPrintBill && <InvoicePaper bill={postPrintBill} />}</div>
     </>
   );
 }
-
 /* ============================================================
    REPORTS
 ============================================================ */
 
 function ReportsPage({ jobs = [], totalPaid, outstanding, totalExpenses = 0, netCash = 0, expenses = [] }) {
-  const [period, setPeriod] = useState("12m");
-  const [view, setView] = useState("overview");
-  const [status, setStatus] = useState("all");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const safeJobs=Array.isArray(jobs)?jobs:[]; const safeExpenses=Array.isArray(expenses)?expenses:[];
-  const now=new Date();
-  const cutoff = period==="7d"?7:period==="30d"?30:period==="90d"?90:3650;
-  const inPeriod=(raw)=>{const d=new Date(raw);if(Number.isNaN(d.getTime()))return false;if(period==="custom"){const from=customFrom?new Date(`${customFrom}T00:00:00`):null;const to=customTo?new Date(`${customTo}T23:59:59`):null;return (!from||d>=from)&&(!to||d<=to);}return cutoff===3650||(now-d)<=cutoff*86400000;};
+  const [period,setPeriod]=useState("12m"); const [view,setView]=useState("overview"); const [status,setStatus]=useState("all"); const [from,setFrom]=useState(""); const [to,setTo]=useState("");
+  const safeJobs=Array.isArray(jobs)?jobs:[]; const safeExpenses=Array.isArray(expenses)?expenses:[]; const now=new Date();
+  const inPeriod=(raw)=>{const d=new Date(raw);if(Number.isNaN(d.getTime()))return false;if(period==="custom"){const f=from?new Date(`${from}T00:00:00`):null;const t=to?new Date(`${to}T23:59:59`):null;return (!f||d>=f)&&(!t||d<=t);}const days=period==="7d"?7:period==="30d"?30:period==="90d"?90:365;return now-d<=days*86400000;};
   const filtered=safeJobs.filter(j=>inPeriod(j.date||j.created_at||j.deliveryDate)&&(status==="all"||String(j.status||"").toLowerCase()===status));
-  const revenue=filtered.reduce((a,b)=>a+Number(b.amount||0),0); const paid=filtered.reduce((a,b)=>a+Number(b.paid||0),0); const pending=Math.max(0,revenue-paid); const jobCount=filtered.length;
+  const revenue=filtered.reduce((a,b)=>a+Number(b.total||b.amount||0),0); const paid=filtered.reduce((a,b)=>a+Number(b.paid||0),0); const pending=Math.max(0,revenue-paid); const jobCount=filtered.length; const periodExpenses=safeExpenses.filter(x=>inPeriod(x.expense_date||x.created_at)).reduce((a,b)=>a+Number(b.amount||0),0); const periodNet=paid-periodExpenses;
   const statusCounts={received:filtered.filter(j=>String(j.status).toLowerCase()==="received").length,progress:filtered.filter(j=>String(j.status).toLowerCase().includes("progress")).length,ready:filtered.filter(j=>String(j.status).toLowerCase()==="ready").length,delivered:filtered.filter(j=>String(j.status).toLowerCase()==="delivered").length};
-  const monthly=Array.from({length:6},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-(5-i),1);return {label:d.toLocaleString("en",{month:"short"}),value:safeJobs.filter(j=>{const x=new Date(j.date||j.created_at);return !Number.isNaN(x.getTime())&&x.getMonth()===d.getMonth()&&x.getFullYear()===d.getFullYear()}).reduce((a,b)=>a+Number(b.amount||0),0)};});
-  const topCustomers=Object.values(filtered.reduce((acc,j)=>{const k=j.customer||"Unknown";acc[k]=(acc[k]||0)+Number(j.amount||0);return acc;},{})).sort((a,b)=>b-a).slice(0,5);
-  const exportCsv=()=>{const rows=["Report,Value",`Revenue,${revenue}`,`Collected,${paid}`,`Outstanding,${pending}`,`Expenses,${totalExpenses}`,`Net Cash,${netCash}`,`Jobs,${jobCount}`].join("\n");const blob=new Blob([rows],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`al-kanz-${view}-report.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);};
+  const monthly=Array.from({length:6},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-(5-i),1);return {label:d.toLocaleString("en",{month:"short"}),value:safeJobs.filter(j=>{const x=new Date(j.date||j.created_at);return !Number.isNaN(x.getTime())&&x.getMonth()===d.getMonth()&&x.getFullYear()===d.getFullYear()}).reduce((a,b)=>a+Number(b.total||b.amount||0),0)};});
+  const exportCsv=()=>{const rows=[["Invoice/Job","Customer","Amount","Paid","Balance","Status"],...filtered.map(j=>[j.id,j.customer,Number(j.total||j.amount||0),Number(j.paid||0),Math.max(0,Number(j.total||j.amount||0)-Number(j.paid||0)),j.status])].map(r=>r.map(x=>`"${String(x??"").replaceAll('"','""')}"`).join(",")).join("\n");const blob=new Blob([rows],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`al-kanz-${view}-report.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);};
   return <>
-    <PageTitle eyebrow="FINANCE · BUSINESS INTELLIGENCE" title="Reports & Insights" subtitle="Track sales, collections, jobs, expenses, customers and workshop performance."/>
-    <div className="report-control-panel"><div className="report-view-tabs">{[["overview","Overview"],["revenue","Revenue"],["collections","Collections"],["expenses","Expenses"],["jobs","Jobs"],["customers","Customers"]].map(([k,l])=><button key={k} className={view===k?"active":""} onClick={()=>setView(k)}>{l}</button>)}</div><div className="report-filters"><select value={period} onChange={e=>setPeriod(e.target.value)}><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="12m">Last 12 months</option><option value="custom">Custom dates</option></select>{period==="custom"&&<><label className="report-date-field">From<input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)}/></label><label className="report-date-field">To<input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)}/></label></>}<select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All job statuses</option><option value="received">Received</option><option value="in progress">In Progress</option><option value="ready">Ready</option><option value="delivered">Delivered</option></select><button className="secondary-button" onClick={exportCsv}><Download size={15}/> Export CSV</button><button className="primary-button" onClick={()=>window.print()}><Printer size={15}/> Print</button></div></div>
-    <div className="report-grid report-grid-rich"><ReportBox icon={TrendingUp} title="Revenue" value={money(revenue)} note={`${jobCount} jobs in selected period`}/><ReportBox icon={CircleDollarSign} title="Collected" value={money(paid)} note="Payments received"/><ReportBox icon={AlertCircle} title="Pending" value={money(pending)} note="Awaiting collection"/><ReportBox icon={Wallet} title="Expenses" value={money(totalExpenses)} note="Recorded workshop costs"/><ReportBox icon={TrendingUp} title="Net cash" value={money(netCash)} note="Collected less expenses"/><ReportBox icon={CheckCircle2} title="Collection rate" value={`${revenue?Math.round((paid/revenue)*100):0}%`} note="Revenue collected"/></div>
-    <div className="reports-main-grid">
-      <div className="card report-chart report-chart-large"><CardHeader eyebrow="PERFORMANCE" title="Revenue trend" subtitle="Monthly billed value · last 6 months"/><div className="bars live-bars report-bars-large">{monthly.map(x=>{const max=Math.max(...monthly.map(y=>y.value),1);return <div className="bar-wrap" key={x.label}><strong>{money(x.value)}</strong><div className="bar animated-bar" style={{height:`${x.value?Math.max(8,(x.value/max)*100):4}%`}}/><span>{x.label}</span></div>})}</div></div>
-      <div className="card report-breakdown-card"><CardHeader eyebrow="WORKSHOP" title="Job status" subtitle="Current workload mix"/><div className="report-status-ring"><div><strong>{safeJobs.filter(j=>!['Completed','Delivered'].includes(j.status)).length}</strong><span>open jobs</span></div></div><div className="status-breakdown"><div><span><i className="status-dot received"/>Received</span><strong>{statusCounts.received}</strong></div><div><span><i className="status-dot progress"/>In progress</span><strong>{statusCounts.progress}</strong></div><div><span><i className="status-dot ready"/>Ready</span><strong>{statusCounts.ready}</strong></div><div><span><i className="status-dot delivered"/>Delivered</span><strong>{statusCounts.delivered}</strong></div></div></div>
-    </div>
-    <div className="reports-bottom-grid"><div className="card report-list-card"><CardHeader eyebrow="COLLECTIONS" title="Outstanding invoices" subtitle="Jobs with a remaining balance"/><div className="report-list">{safeJobs.filter(j=>Number(j.amount||0)>Number(j.paid||0)).slice(0,8).map(j=><div key={j.id}><span><strong>{j.customer}</strong><small>{j.id} · {j.item||j.work}</small></span><strong className="orange-text">{money(Number(j.amount||0)-Number(j.paid||0))}</strong></div>)}{!safeJobs.some(j=>Number(j.amount||0)>Number(j.paid||0))&&<EmptyState icon={CheckCircle2} title="All caught up" text="No outstanding job balances found."/>}</div></div><div className="card report-list-card"><CardHeader eyebrow="CUSTOMERS" title="Top customers" subtitle="Highest billed value in the selected period"/><div className="report-list">{Object.entries(filtered.reduce((a,j)=>{const k=j.customer||"Unknown";a[k]=(a[k]||0)+Number(j.amount||0);return a;},{})).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,value],i)=><div key={name}><span><strong>0{i+1} · {name}</strong><small>Customer billing contribution</small></span><strong>{money(value)}</strong></div>)}{!filtered.length&&<EmptyState icon={Users} title="No customer data" text="Create jobs to populate this report."/>}</div></div><div className="card report-list-card"><CardHeader eyebrow="EXPENSES" title="Recent expense activity" subtitle="Latest recorded workshop costs"/><div className="report-list">{safeExpenses.slice(0,6).map((x,i)=><div key={x.id||i}><span><strong>{x.category||"Workshop"}</strong><small>{x.description||"Expense"}</small></span><strong className="expense">-{money(x.amount)}</strong></div>)}{!safeExpenses.length&&<EmptyState icon={Wallet} title="No expenses" text="Recorded expenses will appear here."/>}</div></div></div>
+    <PageTitle eyebrow="FINANCE · BUSINESS INTELLIGENCE" title="Reports & Insights" subtitle="Revenue, collections, jobs, customers, expenses, profit and workshop performance."/>
+    <div className="report-control-panel"><div className="report-view-tabs">{[["overview","Overview"],["revenue","Revenue"],["collections","Collections"],["expenses","Expenses"],["jobs","Jobs"],["customers","Customers"],["profit","Profit & Cash"]].map(([k,l])=><button type="button" key={k} className={view===k?"active":""} onClick={()=>setView(k)}>{l}</button>)}</div><div className="report-filters"><select value={period} onChange={e=>setPeriod(e.target.value)}><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="12m">Last 12 months</option><option value="custom">Custom dates</option></select>{period==="custom"&&<><label className="report-date-field"><span>From</span><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label className="report-date-field"><span>To</span><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label></>}<select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All job statuses</option><option value="received">Received</option><option value="in progress">In Progress</option><option value="ready">Ready</option><option value="delivered">Delivered</option></select><button type="button" className="secondary-button" onClick={exportCsv}><Download size={15}/> Export CSV</button><button type="button" className="primary-button" onClick={()=>window.print()}><Printer size={15}/> Print</button></div></div>
+    <div className="report-grid report-grid-rich"><ReportBox icon={TrendingUp} title="Revenue" value={money(revenue)} note={`${jobCount} records in period`}/><ReportBox icon={CircleDollarSign} title="Collected" value={money(paid)} note="Payments received"/><ReportBox icon={AlertCircle} title="Pending" value={money(pending)} note="Awaiting collection"/><ReportBox icon={Wallet} title="Expenses" value={money(periodExpenses)} note="Selected-period costs"/><ReportBox icon={TrendingUp} title="Net cash" value={money(periodNet)} note="Collected less expenses"/><ReportBox icon={CheckCircle2} title="Collection rate" value={`${revenue?Math.round(paid/revenue*100):0}%`} note="Revenue collected"/></div>
+    <div className="reports-main-grid"><div className="card report-chart report-chart-large"><CardHeader eyebrow="PERFORMANCE" title="Revenue trend" subtitle="Monthly billed value · last 6 months"/><div className="bars live-bars report-bars-large">{monthly.map(x=>{const max=Math.max(...monthly.map(y=>y.value),1);return <div className="bar-wrap" key={x.label}><strong>{money(x.value)}</strong><div className="bar animated-bar" style={{height:`${x.value?Math.max(8,x.value/max*100):4}%`}}/><span>{x.label}</span></div>})}</div></div><div className="card report-breakdown-card"><CardHeader eyebrow="WORKSHOP" title="Job status" subtitle="Selected-period workload"/><div className="report-status-ring"><div><strong>{filtered.filter(j=>!['Completed','Delivered'].includes(j.status)).length}</strong><span>open jobs</span></div></div><div className="status-breakdown"><div><span><i className="status-dot received"/>Received</span><strong>{statusCounts.received}</strong></div><div><span><i className="status-dot progress"/>In progress</span><strong>{statusCounts.progress}</strong></div><div><span><i className="status-dot ready"/>Ready</span><strong>{statusCounts.ready}</strong></div><div><span><i className="status-dot delivered"/>Delivered</span><strong>{statusCounts.delivered}</strong></div></div></div></div>
+    <div className="reports-bottom-grid"><div className="card report-list-card"><CardHeader eyebrow="COLLECTIONS" title="Outstanding invoices" subtitle="Largest balances first"/><div className="report-list">{filtered.filter(j=>Number(j.total||j.amount||0)>Number(j.paid||0)).sort((a,b)=>(Number(b.total||b.amount||0)-Number(b.paid||0))-(Number(a.total||a.amount||0)-Number(a.paid||0))).slice(0,8).map(j=><div key={j.id}><span><strong>{j.customer}</strong><small>{j.id} · {j.item||j.work}</small></span><strong className="orange-text">{money(Number(j.total||j.amount||0)-Number(j.paid||0))}</strong></div>)}{!filtered.some(j=>Number(j.total||j.amount||0)>Number(j.paid||0))&&<EmptyState icon={CheckCircle2} title="All caught up" text="No outstanding balances in this period."/>}</div></div><div className="card report-list-card"><CardHeader eyebrow="CUSTOMERS" title="Top customers" subtitle="Highest billed value"/><div className="report-list">{Object.entries(filtered.reduce((a,j)=>{const k=j.customer||"Unknown";a[k]=(a[k]||0)+Number(j.total||j.amount||0);return a;},{})).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,value],i)=><div key={name}><span><strong>0{i+1} · {name}</strong><small>Customer billing contribution</small></span><strong>{money(value)}</strong></div>)}{!filtered.length&&<EmptyState icon={Users} title="No customer data" text="Create invoices or jobs to populate this report."/>}</div></div><div className="card report-list-card"><CardHeader eyebrow="PROFIT & CASH" title="Period summary" subtitle="Cash movement and workshop costs"/><div className="report-list"><div><span><strong>Collected</strong><small>Customer payments</small></span><strong className="income">+{money(paid)}</strong></div><div><span><strong>Expenses</strong><small>Workshop costs</small></span><strong className="expense">-{money(periodExpenses)}</strong></div><div><span><strong>Net cash</strong><small>Collected minus expenses</small></span><strong>{money(periodNet)}</strong></div></div></div></div>
   </>;
 }
 
@@ -3274,15 +3354,6 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
             <div className="document-totals"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(grandTotal)}</strong></div></div>
             <div className="document-note"><strong>Quotation terms</strong><span>This quotation is a demo estimate and is valid for {form.validity}. Final billing may vary based on approved work or materials.</span></div>
           </div>
-        </div>
-      )}
-
-      {!showForm && (
-        <div className="quotation-performance-bar">
-          <div><small>QUOTATIONS</small><strong>{safeQuotations.length}</strong></div>
-          <div><small>TOTAL VALUE</small><strong>{money(safeQuotations.reduce((a,q)=>a+Number(q.amount||0),0))}</strong></div>
-          <div><small>APPROVED</small><strong>{money(safeQuotations.filter(q=>q.status==="Approved").reduce((a,q)=>a+Number(q.amount||0),0))}</strong></div>
-          <div><small>CONVERSION</small><strong>{safeQuotations.length?Math.round((safeQuotations.filter(q=>q.status==="Approved").length/safeQuotations.length)*100):0}%</strong></div>
         </div>
       )}
 
@@ -3873,22 +3944,14 @@ function SupplierModal({ close, save }) {
 ============================================================ */
 
 function StaffModal({ close, save }) {
-  const [form, setForm] = useState({ name:"", role:"Upholsterer", phone:"", email:"", address:"", emergencyContact:"", bank:"", joiningDate:"", salary:"", salaryType:"Monthly", attendance:"100", performance:"100", status:"Active", notes:"" });
+  const [form,setForm]=useState({name:"",role:"Upholsterer",phone:"",email:"",address:"",emergencyContact:"",joiningDate:new Date().toISOString().slice(0,10),bank:"",iban:"",salary:"",salaryPeriod:"Monthly",attendance:"100",performance:"100",status:"Active",notes:""});
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=(e)=>{e.preventDefault();if(!form.name.trim()||!form.phone.trim())return alert("Please enter staff name and phone number.");save({...form,name:form.name.trim(),phone:form.phone.trim(),salary:Number(form.salary||0),attendance:Number(form.attendance||0),performance:Number(form.performance||0)});};
-  return <Modal title="Add Staff" subtitle="Create a complete employee profile with payroll and performance information." close={close}>
-    <form onSubmit={submit}>
-      <div className="form-section-label"><span>PROFILE</span><small>Employee identity and contact</small></div>
-      <div className="modal-grid"><Field label="Staff name *" value={form.name} onChange={v=>update("name",v)} placeholder="Full name"/><SelectField label="Role" value={form.role} onChange={v=>update("role",v)} options={["Upholsterer","Master Upholsterer","Leather Technician","Stitching Specialist","Foam Technician","Helper","Manager"]}/><Field label="Phone *" value={form.phone} onChange={v=>update("phone",v)} placeholder="+971..."/><Field label="Email" value={form.email} onChange={v=>update("email",v)} placeholder="staff@email.com"/></div>
-      <div className="modal-grid"><Field label="Address" value={form.address} onChange={v=>update("address",v)} placeholder="Dubai, UAE"/><Field label="Emergency contact" value={form.emergencyContact} onChange={v=>update("emergencyContact",v)} placeholder="+971..."/><Field label="Joining date" type="date" value={form.joiningDate} onChange={v=>update("joiningDate",v)}/><SelectField label="Status" value={form.status} onChange={v=>update("status",v)} options={["Active","On Leave","Inactive"]}/></div>
-      <div className="form-section-label"><span>PAYROLL</span><small>Salary and payment information</small></div>
-      <div className="modal-grid"><Field label="Salary" type="number" value={form.salary} onChange={v=>update("salary",v)} placeholder="AED 0"/><SelectField label="Salary period" value={form.salaryType} onChange={v=>update("salaryType",v)} options={["Monthly","Weekly","Daily","Hourly"]}/><Field label="Bank" value={form.bank} onChange={v=>update("bank",v)} placeholder="Bank name"/></div>
-      <div className="form-section-label"><span>PERFORMANCE</span><small>Workshop performance snapshot</small></div>
-      <div className="modal-grid"><Field label="Attendance %" type="number" value={form.attendance} onChange={v=>update("attendance",v)} placeholder="100"/><Field label="Performance %" type="number" value={form.performance} onChange={v=>update("performance",v)} placeholder="100"/></div>
-      <label className="field"><span>Notes</span><textarea rows="3" value={form.notes} onChange={e=>update("notes",e.target.value)} placeholder="Skills, responsibilities, payroll notes..."/></label>
-      <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button type="submit" className="primary-button"><Save size={16}/>Save Staff</button></div>
-    </form>
-  </Modal>;
+  const submit=(e)=>{e.preventDefault();if(!form.name.trim())return alert("Staff name is required.");save({...form,name:form.name.trim(),salary:Number(form.salary||0),attendance:Number(form.attendance||0),performance:Number(form.performance||0)});};
+  return <Modal title="Add Staff" subtitle="Create a complete employee profile with payroll and performance information." close={close}><form onSubmit={submit}>
+    <div className="form-section-label"><span>PERSONAL & CONTACT</span><small>Employee information</small></div><div className="modal-grid"><Field label="Staff name *" value={form.name} onChange={v=>update("name",v)} placeholder="Full name"/><SelectField label="Role" value={form.role} onChange={v=>update("role",v)} options={["Upholsterer","Master Upholsterer","Leather Technician","Stitching Specialist","Foam Technician","Helper","Driver","Manager"]}/><Field label="Phone" value={form.phone} onChange={v=>update("phone",v)} placeholder="+971 50 000 0000"/><Field label="Email" value={form.email} onChange={v=>update("email",v)} placeholder="staff@email.com"/><Field label="Address" value={form.address} onChange={v=>update("address",v)} placeholder="Dubai, UAE"/><Field label="Emergency contact" value={form.emergencyContact} onChange={v=>update("emergencyContact",v)} placeholder="Name · phone"/></div>
+    <div className="form-section-label"><span>PAYROLL</span><small>Salary and bank details</small></div><div className="modal-grid"><Field label="Salary" type="number" value={form.salary} onChange={v=>update("salary",v)} placeholder="AED 0"/><SelectField label="Salary period" value={form.salaryPeriod} onChange={v=>update("salaryPeriod",v)} options={["Monthly","Weekly","Daily","Hourly"]}/><Field label="Joining date" type="date" value={form.joiningDate} onChange={v=>update("joiningDate",v)}/><Field label="Bank" value={form.bank} onChange={v=>update("bank",v)} placeholder="Bank name"/><Field label="IBAN" value={form.iban} onChange={v=>update("iban",v)} placeholder="AE..."/><SelectField label="Status" value={form.status} onChange={v=>update("status",v)} options={["Active","On Leave","Inactive"]}/></div>
+    <div className="form-section-label"><span>PERFORMANCE</span><small>Track attendance and quality</small></div><div className="modal-grid"><Field label="Attendance %" type="number" value={form.attendance} onChange={v=>update("attendance",v)} placeholder="100"/><Field label="Performance %" type="number" value={form.performance} onChange={v=>update("performance",v)} placeholder="100"/></div><label className="field"><span>Staff notes</span><textarea rows="3" value={form.notes} onChange={e=>update("notes",e.target.value)} placeholder="Skills, responsibilities, salary notes, remarks..."/></label>
+    <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button type="submit" className="primary-button"><Save size={16}/> Save Staff</button></div></form></Modal>;
 }
 
 /* ============================================================
