@@ -855,70 +855,79 @@ const netCash = totalPaid - totalExpenses;
     auditLocal("Recorded payment", "job", jobId, { amount });
   };
 
-  const addCustomer = async (customer) => {
-    const newCustomer = { ...customer, id: Date.now(), jobs: 0, outstanding: 0, whatsapp: customer.whatsapp || customer.phone || "", email: customer.email || "", address: customer.address || "", notes: customer.notes || "" };
-    setCustomers(prev => [newCustomer, ...prev]);
-    setModal(null);
-    if (hasSupabase) {
-      const { error } = await supabase.from("customers").insert({ name: customer.name, phone: customer.phone, whatsapp: customer.whatsapp || customer.phone || "", email: customer.email || "", location: customer.location || "Dubai", address: customer.address || "", notes: customer.notes || "", jobs_count: 0, outstanding: 0 });
-      if (error) { console.error("Customer save failed:", error); alert("Customer saved locally, but cloud sync failed."); }
-    }
-    auditLocal("Created customer", "customer", newCustomer.id, { name: customer.name });
-  };
-
-  const addSupplier = async (supplier) => {
-    const newSupplier = {
-      ...supplier,
-      id: Date.now(),
-      balance: Number(supplier.balance || 0),
+  const saveCustomer = async (customer) => {
+    const editing = Boolean(customer.id);
+    const record = {
+      ...customer,
+      id: customer.id || Date.now(),
+      jobs: Number(customer.jobs || 0),
+      outstanding: Number(customer.outstanding || 0),
+      whatsapp: customer.whatsapp || customer.phone || "",
+      email: customer.email || "",
+      address: customer.address || "",
+      notes: customer.notes || "",
     };
-    setSuppliers((prev) => [newSupplier, ...prev]);
+    setCustomers(prev => editing ? prev.map(x => String(x.id) === String(record.id) ? { ...x, ...record } : x) : [record, ...prev]);
     setModal(null);
-
     if (hasSupabase) {
       try {
-        const { error } = await supabase.from("suppliers").insert({
-          name: supplier.name,
-          phone: supplier.phone,
-          email: supplier.email || "",
-          address: supplier.address || "",
-          location: supplier.location || "Dubai",
-          notes: supplier.notes || "",
-          material: supplier.material,
-          balance: Number(supplier.balance || 0),
-        });
-        if (error) throw error;
+        const payload = { name: record.name, phone: record.phone, whatsapp: record.whatsapp, email: record.email, location: record.location || "Dubai", address: record.address, notes: record.notes, jobs_count: record.jobs || 0, outstanding: record.outstanding || 0 };
+        const result = editing
+          ? await supabase.from("customers").update(payload).eq("id", record.id)
+          : await supabase.from("customers").insert(payload);
+        if (result.error) throw result.error;
+      } catch (error) {
+        console.error("Customer save failed:", error);
+        alert(editing ? "Customer updated locally, but cloud sync failed." : "Customer saved locally, but cloud sync failed.");
+      }
+    }
+    auditLocal(editing ? "Updated customer" : "Created customer", "customer", record.id, { name: record.name });
+  };
+
+  const saveSupplier = async (supplier) => {
+    const editing = Boolean(supplier.id);
+    const record = { ...supplier, id: supplier.id || Date.now(), balance: Number(supplier.balance || 0) };
+    setSuppliers(prev => editing ? prev.map(x => String(x.id) === String(record.id) ? { ...x, ...record } : x) : [record, ...prev]);
+    setModal(null);
+    if (hasSupabase) {
+      try {
+        const payload = { name: record.name, phone: record.phone, email: record.email || "", address: record.address || "", location: record.location || "Dubai", notes: record.notes || "", material: record.material || "", balance: record.balance };
+        const result = editing ? await supabase.from("suppliers").update(payload).eq("id", record.id) : await supabase.from("suppliers").insert(payload);
+        if (result.error) throw result.error;
       } catch (error) {
         console.error("Supplier save failed:", error);
-        alert("Supplier saved locally, but cloud sync failed.");
+        alert(editing ? "Supplier updated locally, but cloud sync failed." : "Supplier saved locally, but cloud sync failed.");
       }
     }
-    auditLocal("Created supplier", "supplier", newSupplier.id, { name: supplier.name });
+    auditLocal(editing ? "Updated supplier" : "Created supplier", "supplier", record.id, { name: record.name });
   };
 
-  const addStaff = async (person) => {
-    const newStaff = {
-      ...person,
-      id: Date.now(),
-    };
-    setStaff((prev) => [newStaff, ...prev]);
+  const saveStaff = async (person) => {
+    const editing = Boolean(person.id);
+    const record = { ...person, id: person.id || Date.now(), salary: Number(person.salary || 0), attendance: Number(person.attendance || 0), performance: Number(person.performance || 0) };
+    setStaff(prev => editing ? prev.map(x => String(x.id) === String(record.id) ? { ...x, ...record } : x) : [record, ...prev]);
     setModal(null);
-
     if (hasSupabase) {
       try {
-        const { error } = await supabase.from("staff").insert({
-          name: person.name, role: person.role, phone: person.phone, email: person.email || "", address: person.address || "",
-          emergency_contact: person.emergencyContact || "", joining_date: person.joiningDate || "", bank: person.bank || "", iban: person.iban || "",
-          salary: Number(person.salary || 0), salary_period: person.salaryPeriod || "Monthly", attendance: Number(person.attendance || 0),
-          performance: Number(person.performance || 0), status: person.status || "Active", notes: person.notes || "",
-        });
-        if (error) throw error;
+        const payload = {
+          name: record.name, role: record.role, phone: record.phone, email: record.email || "", address: record.address || "",
+          emergency_contact: record.emergencyContact || "", joining_date: record.joiningDate || "", bank: record.bank || "", iban: record.iban || "",
+          salary: record.salary, salary_period: record.salaryPeriod || "Monthly", attendance: record.attendance, performance: record.performance,
+          status: record.status || "Active", notes: record.notes || "",
+        };
+        const result = editing ? await supabase.from("staff").update(payload).eq("id", record.id) : await supabase.from("staff").insert(payload);
+        if (result.error) throw result.error;
       } catch (error) {
         console.error("Staff save failed:", error);
-        alert("Staff saved locally, but cloud sync failed.");
+        alert(editing ? "Staff updated locally, but cloud sync failed." : "Staff saved locally, but cloud sync failed.");
       }
     }
-    auditLocal("Created staff member", "staff", newStaff.id, { name: person.name });
+    auditLocal(editing ? "Updated staff member" : "Created staff member", "staff", record.id, { name: record.name });
+  };
+
+  const editEntity = (type, record) => {
+    setEntityPreview(null);
+    setModal({ type, record });
   };
 
   const filteredJobs = useMemo(() => {
@@ -1349,6 +1358,7 @@ const netCash = totalPaid - totalExpenses;
                 navigate={navigate}
                 setModal={setModal}
                 setEntityPreview={setEntityPreview}
+                onEdit={(record) => editEntity("customer", record)}
               />
             )}
 
@@ -1361,11 +1371,11 @@ const netCash = totalPaid - totalExpenses;
             )}
 
             {page === "Suppliers" && (
-              <SuppliersPage suppliers={suppliers} jobs={jobs} expenses={expenses} transactions={transactions} setSuppliers={setSuppliers} setModal={setModal} setEntityPreview={setEntityPreview} />
+              <SuppliersPage suppliers={suppliers} jobs={jobs} expenses={expenses} transactions={transactions} setSuppliers={setSuppliers} setModal={setModal} setEntityPreview={setEntityPreview} onEdit={(record) => editEntity("supplier", record)} />
             )}
 
             {page === "Staff" && (
-              <StaffPage staff={staff} setStaff={setStaff} setModal={setModal} setEntityPreview={setEntityPreview} />
+              <StaffPage staff={staff} setStaff={setStaff} setModal={setModal} setEntityPreview={setEntityPreview} onEdit={(record) => editEntity("staff", record)} />
             )}
 
             {(page === "New Quotation" || page === "All Quotations" || page === "Quotations") && (
@@ -1461,10 +1471,11 @@ const netCash = totalPaid - totalExpenses;
           />
         )}
 
-        {modal === "customer" && (
+        {(modal === "customer" || modal?.type === "customer") && (
           <CustomerModal
             close={() => setModal(null)}
-            save={addCustomer}
+            save={saveCustomer}
+            initial={modal?.record}
           />
         )}
 
@@ -1485,12 +1496,12 @@ const netCash = totalPaid - totalExpenses;
           />
         )}
 
-        {modal === "supplier" && (
-          <SupplierModal close={() => setModal(null)} save={addSupplier} />
+        {(modal === "supplier" || modal?.type === "supplier") && (
+          <SupplierModal close={() => setModal(null)} save={saveSupplier} initial={modal?.record} />
         )}
 
-        {modal === "staff" && (
-          <StaffModal close={() => setModal(null)} save={addStaff} />
+        {(modal === "staff" || modal?.type === "staff") && (
+          <StaffModal close={() => setModal(null)} save={saveStaff} initial={modal?.record} />
         )}
       </div>
     </>
@@ -1584,7 +1595,7 @@ function Dashboard({
           <div className="dashboard-action-list">
             <QuickAction icon={ReceiptText} title="Create Bill" subtitle="Bill a particular upholstery item" onClick={() => navigate("Billing")} />
             <QuickAction icon={Plus} title="New Job" subtitle="Add a customer upholstery job" onClick={() => setModal("job")} />
-            <QuickAction icon={Users} title="Add Customer" subtitle="Save a new customer profile" onClick={() => setModal("customer")} />
+            <QuickAction icon={Users} title={initial ? "Edit Customer" : "Add Customer"} subtitle="Save a new customer profile" onClick={() => setModal("customer")} />
             <QuickAction icon={Package} title="Add Material" subtitle="Update workshop inventory" onClick={() => setModal("material")} />
           </div>
           <div className="action-link-row">
@@ -2253,7 +2264,7 @@ function JobDetailsDrawer({
    CUSTOMERS
 ============================================================ */
 
-function CustomersPage({ customers = [], jobs = [], payments = [], setModal, navigate, setEntityPreview }) {
+function CustomersPage({ customers = [], jobs = [], payments = [], setModal, navigate, setEntityPreview, onEdit }) {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [query, setQuery] = useState("");
   const safeCustomers = Array.isArray(customers) ? customers : [];
@@ -2299,7 +2310,7 @@ function CustomersPage({ customers = [], jobs = [], payments = [], setModal, nav
       <div className="crm-contact-grid"><div><small>PHONE</small><strong>{selectedCustomer.phone || "—"}</strong></div><div><small>WHATSAPP</small><strong>{selectedCustomer.whatsapp || selectedCustomer.phone || "—"}</strong></div><div><small>EMAIL</small><strong>{selectedCustomer.email || "—"}</strong></div><div><small>ADDRESS</small><strong>{selectedCustomer.address || selectedCustomer.location || "—"}</strong></div></div>
       <div className="crm-kpis"><div><small>PREVIOUS PURCHASES</small><strong>{money(p.purchases)}</strong></div><div><small>JOBS</small><strong>{p.customerJobs.length}</strong></div><div><small>PAYMENTS</small><strong>{money(p.paid)}</strong></div><div className={p.balance>0?"is-warning":""}><small>PENDING BALANCE</small><strong>{money(p.balance)}</strong></div></div>
       <div className="crm-history-grid"><div><div className="section-mini-head"><strong>Previous jobs & purchases</strong><span>{p.customerJobs.length} records</span></div><div className="crm-history-list">{p.customerJobs.slice(0,8).map(j=><div key={j.id}><span><b>{j.id}</b><small>{j.item || j.work || "Upholstery work"} · {j.date || "—"}</small></span><strong>{money(j.amount)}</strong></div>)}{!p.customerJobs.length&&<EmptyState icon={ClipboardList} title="No previous jobs" text="New work for this customer will appear here."/>}</div></div><div><div className="section-mini-head"><strong>Payment history</strong><span>{p.customerPayments.length} records</span></div><div className="crm-history-list">{p.customerPayments.slice(0,8).map((pay,i)=><div key={pay.id||i}><span><b>{pay.payment_method||"Cash"}</b><small>{pay.paid_at ? new Date(pay.paid_at).toLocaleDateString("en-AE") : "—"}</small></span><strong className="income">+{money(pay.amount)}</strong></div>)}{!p.customerPayments.length&&<EmptyState icon={CreditCard} title="No payments yet" text="Payments recorded against this customer will appear here."/>}</div></div></div>
-      <div className="document-actions"><button className="secondary-button" onClick={()=>navigate?.("Billing")}><Receipt size={15}/> Billing</button><button className="primary-button" onClick={()=>setSelectedCustomer(null)}>Done</button></div>
+      <div className="document-actions"><button className="secondary-button" onClick={()=>{setSelectedCustomer(null);onEdit?.(selectedCustomer);}}><Edit3 size={15}/> Edit customer</button><button className="secondary-button" onClick={()=>navigate?.("Billing")}><Receipt size={15}/> Billing</button><button className="primary-button" onClick={()=>setSelectedCustomer(null)}>Done</button></div>
     </div></div>; })()}
   </>;
 }
@@ -2372,7 +2383,7 @@ function MaterialsPage({
    SUPPLIERS
 ============================================================ */
 
-function SuppliersPage({ suppliers = [], jobs = [], expenses = [], transactions = [], setSuppliers, setModal, setEntityPreview }) {
+function SuppliersPage({ suppliers = [], jobs = [], expenses = [], transactions = [], setSuppliers, setModal, setEntityPreview, onEdit }) {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [query, setQuery] = useState("");
   const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
@@ -2392,7 +2403,7 @@ function SuppliersPage({ suppliers = [], jobs = [], expenses = [], transactions 
     <PageTitle eyebrow="PROCUREMENT · CRM" title="Suppliers" subtitle="Supplier contacts, materials supplied, purchases, payments and outstanding balances." button="Add Supplier" onClick={()=>setModal("supplier")}/>
     <div className="crm-toolbar"><div className="crm-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search supplier, material, phone or email..."/><span>{filtered.length} suppliers</span></div><div className="crm-toolbar-stats"><span><strong>{safeSuppliers.length}</strong> suppliers</span><span><strong>{money(safeSuppliers.reduce((a,b)=>a+Number(b.balance||0),0))}</strong> payable</span></div></div>
     <div className="supplier-premium-grid">{filtered.map(s=>{const d=detail(s);return <div className="supplier-premium-card" key={s.id}><div className="supplier-card-head"><div className="supplier-logo"><Truck size={20}/></div><span className="supplier-status">{d.balance>0?"PAYABLE":"CLEAR"}</span><button className="dots" onClick={()=>setSelectedSupplier(s)}><MoreHorizontal size={17}/></button></div><h3>{s.name}</h3><p>{s.material || "Workshop materials"}</p><div className="supplier-contact-stack"><span><Phone size={13}/>{s.phone || "No phone"}</span><span><Mail size={13}/>{s.email || "No email"}</span><span><MapPin size={13}/>{s.address || s.location || "Dubai, UAE"}</span></div><div className="supplier-finance"><div><small>PURCHASES</small><strong>{money(d.purchases)}</strong></div><div><small>PAYMENTS</small><strong className="income">{money(d.payments)}</strong></div><div><small>BALANCE</small><strong className={d.balance>0?"orange-text":"income"}>{money(d.balance)}</strong></div></div><button className="secondary-button full-width" onClick={()=>setSelectedSupplier(s)}><Eye size={14}/> View supplier history</button></div>})}{!filtered.length&&<EmptyState icon={Truck} title="No suppliers found" text="Try another search or add a supplier."/>}</div>
-    {selectedSupplier&&(()=>{const d=detail(selectedSupplier);return <div className="modal-backdrop crm-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setSelectedSupplier(null)}><div className="card crm-profile-modal supplier-profile-modal"><button className="modal-close" onClick={()=>setSelectedSupplier(null)}><X size={17}/></button><div className="crm-profile-head"><div className="supplier-logo supplier-logo-xl"><Truck size={24}/></div><div><span className="eyebrow">SUPPLIER PROFILE</span><h2>{selectedSupplier.name}</h2><p>{selectedSupplier.material || "Workshop supplier"} · Supplier #{selectedSupplier.id}</p></div></div><div className="crm-contact-grid"><div><small>PHONE</small><strong>{selectedSupplier.phone||"—"}</strong></div><div><small>EMAIL</small><strong>{selectedSupplier.email||"—"}</strong></div><div><small>ADDRESS</small><strong>{selectedSupplier.address||selectedSupplier.location||"—"}</strong></div><div><small>MATERIALS SUPPLIED</small><strong>{selectedSupplier.material||"—"}</strong></div></div><div className="crm-kpis"><div><small>TOTAL PURCHASES</small><strong>{money(d.purchases)}</strong></div><div><small>PAYMENTS MADE</small><strong>{money(d.payments)}</strong></div><div><small>OPEN BALANCE</small><strong className={d.balance>0?"orange-text":"income"}>{money(d.balance)}</strong></div><div><small>STATUS</small><strong>{d.balance>0?"Payment due":"Clear"}</strong></div></div><div className="crm-history-grid"><div><div className="section-mini-head"><strong>Purchase history</strong><span>{d.purchaseRows.length} records</span></div><div className="crm-history-list">{d.purchaseRows.slice(0,8).map((x,i)=><div key={x.id||i}><span><b>{x.category||"Material purchase"}</b><small>{x.description||x.supplier||"Workshop purchase"}</small></span><strong>{money(x.amount)}</strong></div>)}{!d.purchaseRows.length&&<EmptyState icon={Package} title="No purchase records" text="Supplier purchases will appear here when recorded."/>}</div></div><div><div className="section-mini-head"><strong>Payment history</strong><span>{d.paymentRows.length} records</span></div><div className="crm-history-list">{d.paymentRows.slice(0,8).map((x,i)=><div key={x.id||i}><span><b>{x.account||"Payment"}</b><small>{x.transaction_date?new Date(x.transaction_date).toLocaleDateString("en-AE"):"—"}</small></span><strong className="income">-{money(x.amount)}</strong></div>)}{!d.paymentRows.length&&<EmptyState icon={CreditCard} title="No supplier payments" text="Supplier payments will appear here when recorded."/>}</div></div></div><div className="document-actions"><button className="secondary-button" onClick={()=>setSelectedSupplier(null)}>Close</button></div></div></div>})()}
+    {selectedSupplier&&(()=>{const d=detail(selectedSupplier);return <div className="modal-backdrop crm-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setSelectedSupplier(null)}><div className="card crm-profile-modal supplier-profile-modal"><button className="modal-close" onClick={()=>setSelectedSupplier(null)}><X size={17}/></button><div className="crm-profile-head"><div className="supplier-logo supplier-logo-xl"><Truck size={24}/></div><div><span className="eyebrow">SUPPLIER PROFILE</span><h2>{selectedSupplier.name}</h2><p>{selectedSupplier.material || "Workshop supplier"} · Supplier #{selectedSupplier.id}</p></div></div><div className="crm-contact-grid"><div><small>PHONE</small><strong>{selectedSupplier.phone||"—"}</strong></div><div><small>EMAIL</small><strong>{selectedSupplier.email||"—"}</strong></div><div><small>ADDRESS</small><strong>{selectedSupplier.address||selectedSupplier.location||"—"}</strong></div><div><small>MATERIALS SUPPLIED</small><strong>{selectedSupplier.material||"—"}</strong></div></div><div className="crm-kpis"><div><small>TOTAL PURCHASES</small><strong>{money(d.purchases)}</strong></div><div><small>PAYMENTS MADE</small><strong>{money(d.payments)}</strong></div><div><small>OPEN BALANCE</small><strong className={d.balance>0?"orange-text":"income"}>{money(d.balance)}</strong></div><div><small>STATUS</small><strong>{d.balance>0?"Payment due":"Clear"}</strong></div></div><div className="crm-history-grid"><div><div className="section-mini-head"><strong>Purchase history</strong><span>{d.purchaseRows.length} records</span></div><div className="crm-history-list">{d.purchaseRows.slice(0,8).map((x,i)=><div key={x.id||i}><span><b>{x.category||"Material purchase"}</b><small>{x.description||x.supplier||"Workshop purchase"}</small></span><strong>{money(x.amount)}</strong></div>)}{!d.purchaseRows.length&&<EmptyState icon={Package} title="No purchase records" text="Supplier purchases will appear here when recorded."/>}</div></div><div><div className="section-mini-head"><strong>Payment history</strong><span>{d.paymentRows.length} records</span></div><div className="crm-history-list">{d.paymentRows.slice(0,8).map((x,i)=><div key={x.id||i}><span><b>{x.account||"Payment"}</b><small>{x.transaction_date?new Date(x.transaction_date).toLocaleDateString("en-AE"):"—"}</small></span><strong className="income">-{money(x.amount)}</strong></div>)}{!d.paymentRows.length&&<EmptyState icon={CreditCard} title="No supplier payments" text="Supplier payments will appear here when recorded."/>}</div></div></div><div className="document-actions"><button className="secondary-button" onClick={()=>{setSelectedSupplier(null);onEdit?.(selectedSupplier);}}><Edit3 size={15}/> Edit supplier</button><button className="primary-button" onClick={()=>setSelectedSupplier(null)}>Close</button></div></div></div>})()}
   </>;
 }
 
@@ -2400,7 +2411,7 @@ function SuppliersPage({ suppliers = [], jobs = [], expenses = [], transactions 
    STAFF
 ============================================================ */
 
-function StaffPage({ staff = [], setStaff, setModal, setEntityPreview }) {
+function StaffPage({ staff = [], setStaff, setModal, setEntityPreview, onEdit }) {
   const safeStaff = Array.isArray(staff) ? staff : [];
   const active = safeStaff.filter((p) => p.status === "Active").length;
   const payroll = safeStaff.filter((p) => p.salaryPeriod === "Monthly").reduce((sum, p) => sum + Number(p.salary || 0), 0);
@@ -2424,7 +2435,7 @@ function StaffPage({ staff = [], setStaff, setModal, setEntityPreview }) {
             <div className="staff-contact-lines"><span><Phone size={13}/>{person.phone||"No phone"}</span><span><Mail size={13}/>{person.email||"No email"}</span></div>
             <div className="staff-salary-box"><div><small>SALARY</small><strong>{money(person.salary)}</strong></div><span>{person.salaryPeriod}</span></div>
             <div className="staff-metrics"><div><small>ATTENDANCE</small><strong>{Number(person.attendance||0)}%</strong></div><div><small>PERFORMANCE</small><strong>{Number(person.performance||0)}%</strong></div></div>
-            <button type="button" className="secondary-button full-width" onClick={()=>setEntityPreview?.({type:"Staff",...person})}><Eye size={15}/> View staff profile</button>
+            <div className="customer-card-actions"><button type="button" className="secondary-button" onClick={()=>setEntityPreview?.({type:"Staff",...person})}><Eye size={15}/> View profile</button><button type="button" className="primary-button" onClick={()=>onEdit?.(person)}><Edit3 size={15}/> Edit</button></div>
           </div>;
         })}
         {!safeStaff.length && <EmptyState icon={UserRound} title="No staff members" text="Add your first workshop employee." />}
@@ -3266,6 +3277,7 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
     quantity: "1",
     unitPrice: "",
     validity: "30 days",
+    status: "Draft",
   });
   const [showForm, setShowForm] = useState(page === "New Quotation");
   const [selectedQuote, setSelectedQuote] = useState(null);
@@ -3288,25 +3300,30 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
     setAiText(tips.join(" "));
   };
 
+  const [editingQuote, setEditingQuote] = useState(null);
+
   const save = () => {
     if (!form.customer || !form.item || !form.unitPrice) {
       alert("Customer, item and unit price are required.");
       return;
     }
     const q = {
-      id: `QT-${String(Date.now()).slice(-6)}`,
+      ...(editingQuote || {}),
+      id: editingQuote?.id || `QT-${String(Date.now()).slice(-6)}`,
       ...form,
       quantity: Number(form.quantity || 1),
       unitPrice: Number(form.unitPrice || 0),
       subtotal,
       vat,
       amount: grandTotal,
-      status: "Draft",
-      date: new Date().toLocaleDateString("en-AE"),
+      status: form.status || "Draft",
+      date: editingQuote?.date || new Date().toLocaleDateString("en-AE"),
+      updatedAt: new Date().toISOString(),
     };
-    setQuotations(prev => [q, ...(Array.isArray(prev) ? prev : [])]);
+    setQuotations(prev => editingQuote ? prev.map(x => x.id === editingQuote.id ? q : x) : [q, ...(Array.isArray(prev) ? prev : [])]);
     setSelectedQuote(q);
-    setForm({ customer:"", phone:"", item:"", description:"", quantity:"1", unitPrice:"", validity:"30 days" });
+    setEditingQuote(null);
+    setForm({customer:"", phone:"", item:"", description:"", quantity:"1", unitPrice:"", validity:"30 days", status:"Draft"});
     setShowForm(false);
   };
 
@@ -3320,6 +3337,13 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
         onClick={() => setShowForm(true)}
       />
 
+      <div className="staff-summary-grid quotation-performance-summary">
+        <ReportBox icon={FileText} title="Total quotations" value={safeQuotations.length} note="All saved quotations" />
+        <ReportBox icon={CheckCircle2} title="Approved" value={safeQuotations.filter(q => String(q.status || "").toLowerCase() === "approved").length} note="Accepted quotations" />
+        <ReportBox icon={Clock3} title="Pending" value={safeQuotations.filter(q => !["approved","rejected"].includes(String(q.status || "draft").toLowerCase())).length} note="Awaiting customer decision" />
+        <ReportBox icon={TrendingUp} title="Conversion" value={`${safeQuotations.length ? Math.round((safeQuotations.filter(q => String(q.status || "").toLowerCase() === "approved").length / safeQuotations.length) * 100) : 0}%`} note="Approved / total" />
+      </div>
+
       {showForm && (
         <div className="quotation-invoice-layout">
           <div className="card quotation-form-card">
@@ -3330,6 +3354,7 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
               <label>Item / Service<input value={form.item} onChange={e=>setForm({...form,item:e.target.value})} placeholder="Sofa upholstery, car seat, etc." /></label>
               <label>Quantity<input type="number" min="1" value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})} /></label>
               <label>Unit Price (AED)<input type="number" min="0" value={form.unitPrice} onChange={e=>setForm({...form,unitPrice:e.target.value})} placeholder="0.00" /></label>
+              <label>Status<select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option>Draft</option><option>Sent</option><option>Approved</option><option>Rejected</option></select></label>
               <label>Validity<select value={form.validity} onChange={e=>setForm({...form,validity:e.target.value})}><option>7 days</option><option>15 days</option><option>30 days</option><option>60 days</option></select></label>
               <label className="full-field">Description<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Work included, materials, terms..." rows="4" /></label>
               <div className="quotation-ai-box full-field">
@@ -3376,7 +3401,7 @@ function QuotationPage({ page, quotations = [], setQuotations }) {
             <div className="document-parties"><div><small>FROM</small><strong>Al Kanz Upholstery</strong><span>Dubai, UAE</span></div><div><small>TO</small><strong>{selectedQuote.customer}</strong><span>{selectedQuote.phone || "—"}</span></div></div>
             <div className="invoice-items"><div className="invoice-item-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>TOTAL</span></div><div className="invoice-item-row"><span><strong>{selectedQuote.item}</strong><small>{selectedQuote.description || "—"}</small></span><span>{selectedQuote.quantity}</span><span>{money(selectedQuote.unitPrice)}</span><strong>{money(selectedQuote.subtotal)}</strong></div></div>
             <div className="document-totals"><div><span>Subtotal</span><strong>{money(selectedQuote.subtotal)}</strong></div><div><span>VAT (5%)</span><strong>{money(selectedQuote.vat)}</strong></div><div className="grand"><span>Grand Total</span><strong>{money(selectedQuote.amount)}</strong></div></div>
-            <div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print Quotation</button><button className="secondary-button" onClick={()=>setPrintOpen(true)}><SlidersHorizontal size={16}/> Print Options</button><button className="secondary-button" onClick={()=>{ const copy={...selectedQuote,id:`QT-${String(Date.now()).slice(-6)}`,status:"Draft",date:new Date().toLocaleDateString("en-AE")}; setQuotations(prev=>[copy,...prev]); setSelectedQuote(copy); }}><RefreshCw size={16}/> Duplicate</button><button className="secondary-button" onClick={()=>{ setSelectedQuote(null); setShowForm(true); setForm({customer:selectedQuote.customer,phone:selectedQuote.phone||"",item:selectedQuote.item,description:selectedQuote.description||"",quantity:String(selectedQuote.quantity||1),unitPrice:String(selectedQuote.unitPrice||0),validity:selectedQuote.validity||"30 days"}); }}> <Edit3 size={16}/> Edit</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div>
+            <div className="document-actions"><button className="primary-button" onClick={()=>window.print()}><Printer size={16}/> Print Quotation</button><button className="secondary-button" onClick={()=>setPrintOpen(true)}><SlidersHorizontal size={16}/> Print Options</button><button className="secondary-button" onClick={()=>{ const copy={...selectedQuote,id:`QT-${String(Date.now()).slice(-6)}`,status:"Draft",date:new Date().toLocaleDateString("en-AE")}; setQuotations(prev=>[copy,...prev]); setSelectedQuote(copy); }}><RefreshCw size={16}/> Duplicate</button><button className="secondary-button" onClick={()=>{ setSelectedQuote(null); setShowForm(true); setEditingQuote(selectedQuote); setForm({customer:selectedQuote.customer,phone:selectedQuote.phone||"",item:selectedQuote.item,description:selectedQuote.description||"",quantity:String(selectedQuote.quantity||1),unitPrice:String(selectedQuote.unitPrice||0),validity:selectedQuote.validity||"30 days",status:selectedQuote.status||"Draft"}); }}> <Edit3 size={16}/> Edit</button><button className="secondary-button" onClick={()=>setSelectedQuote(null)}>Close</button></div>
           </div>
         </div>
       )}
@@ -3780,17 +3805,17 @@ function JobModal({ close, save }) {
    CUSTOMER MODAL
 ============================================================ */
 
-function CustomerModal({ close, save }) {
-  const [form, setForm] = useState({name:"",phone:"",whatsapp:"",email:"",location:"",address:"",notes:""});
+function CustomerModal({ close, save, initial }) {
+  const [form, setForm] = useState(initial || {name:"",phone:"",whatsapp:"",email:"",location:"",address:"",notes:""});
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
-  return <Modal title="Add Customer" subtitle="Create a complete customer profile for billing and workshop history." close={close}>
+  return <Modal title={initial ? "Edit Customer" : "Add Customer"} subtitle="Create a complete customer profile for billing and workshop history." close={close}>
     <form onSubmit={e=>{e.preventDefault();if(!form.name.trim())return;save({...form,name:form.name.trim(),whatsapp:form.whatsapp.trim()||form.phone.trim()});}}>
       <div className="form-section-label"><span>CONTACT</span><small>Primary customer information</small></div>
       <div className="modal-grid"><Field label="Customer name *" value={form.name} onChange={v=>update("name",v)} placeholder="Full name / company"/><Field label="Phone" value={form.phone} onChange={v=>update("phone",v)} placeholder="+971 5X XXX XXXX"/><Field label="WhatsApp" value={form.whatsapp} onChange={v=>update("whatsapp",v)} placeholder="+971 5X XXX XXXX"/><Field label="Email" value={form.email} onChange={v=>update("email",v)} placeholder="customer@email.com"/></div>
       <div className="form-section-label"><span>ADDRESS</span><small>Useful for delivery and invoices</small></div>
       <div className="modal-grid"><Field label="Location / City" value={form.location} onChange={v=>update("location",v)} placeholder="Dubai / Sharjah"/><Field label="Full address" value={form.address} onChange={v=>update("address",v)} placeholder="Area, building, street"/></div>
       <label className="field"><span>Customer notes</span><textarea rows="3" value={form.notes} onChange={e=>update("notes",e.target.value)} placeholder="Preferences, measurements, delivery instructions..."/></label>
-      <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button className="primary-button" type="submit"><Save size={16}/>Save Customer</button></div>
+      <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button className="primary-button" type="submit"><Save size={16}/>{initial ? "Update Customer" : "Save Customer"}</button></div>
     </form>
   </Modal>;
 }
@@ -3926,16 +3951,16 @@ function MaterialModal({ close, save }) {
    SUPPLIER MODAL
 ============================================================ */
 
-function SupplierModal({ close, save }) {
-  const [form,setForm]=useState({name:"",phone:"",email:"",material:"Leather",balance:"",location:"",address:"",notes:""});
+function SupplierModal({ close, save, initial }) {
+  const [form,setForm]=useState(initial || {name:"",phone:"",email:"",material:"Leather",balance:"",location:"",address:"",notes:""});
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
-  return <Modal title="Add Supplier" subtitle="Create a detailed supplier profile for procurement and payable tracking." close={close}><form onSubmit={e=>{e.preventDefault();if(!form.name.trim())return;save({...form,name:form.name.trim(),balance:Number(form.balance||0)});}}>
+  return <Modal title={initial ? "Edit Supplier" : "Add Supplier"} subtitle="Create a detailed supplier profile for procurement and payable tracking." close={close}><form onSubmit={e=>{e.preventDefault();if(!form.name.trim())return;save({...form,name:form.name.trim(),balance:Number(form.balance||0)});}}>
     <div className="form-section-label"><span>SUPPLIER CONTACT</span><small>Contact and material details</small></div>
     <div className="modal-grid"><Field label="Supplier name *" value={form.name} onChange={v=>update("name",v)} placeholder="Leather World"/><Field label="Phone" value={form.phone} onChange={v=>update("phone",v)} placeholder="+971 50 000 0000"/><Field label="Email" value={form.email} onChange={v=>update("email",v)} placeholder="sales@supplier.com"/><SelectField label="Material supplied" value={form.material} onChange={v=>update("material",v)} options={["Leather","Fabric","Foam","Accessories","Multiple Materials"]}/></div>
     <div className="form-section-label"><span>ACCOUNT</span><small>Opening payable and address</small></div>
     <div className="modal-grid"><Field label="Opening balance" type="number" value={form.balance} onChange={v=>update("balance",v)} placeholder="AED 0"/><Field label="Location / City" value={form.location} onChange={v=>update("location",v)} placeholder="Dubai"/><Field label="Full address" value={form.address} onChange={v=>update("address",v)} placeholder="Warehouse / office address"/></div>
     <label className="field"><span>Supplier notes</span><textarea rows="3" value={form.notes} onChange={e=>update("notes",e.target.value)} placeholder="Payment terms, contact person, delivery notes..."/></label>
-    <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button type="submit" className="primary-button"><Save size={16}/>Save Supplier</button></div>
+    <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button type="submit" className="primary-button"><Save size={16}/>{initial ? "Update Supplier" : "Save Supplier"}</button></div>
   </form></Modal>;
 }
 
@@ -3943,15 +3968,15 @@ function SupplierModal({ close, save }) {
    STAFF MODAL
 ============================================================ */
 
-function StaffModal({ close, save }) {
-  const [form,setForm]=useState({name:"",role:"Upholsterer",phone:"",email:"",address:"",emergencyContact:"",joiningDate:new Date().toISOString().slice(0,10),bank:"",iban:"",salary:"",salaryPeriod:"Monthly",attendance:"100",performance:"100",status:"Active",notes:""});
+function StaffModal({ close, save, initial }) {
+  const [form,setForm]=useState(initial || {name:"",role:"Upholsterer",phone:"",email:"",address:"",emergencyContact:"",joiningDate:new Date().toISOString().slice(0,10),bank:"",iban:"",salary:"",salaryPeriod:"Monthly",attendance:"100",performance:"100",status:"Active",notes:""});
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=(e)=>{e.preventDefault();if(!form.name.trim())return alert("Staff name is required.");save({...form,name:form.name.trim(),salary:Number(form.salary||0),attendance:Number(form.attendance||0),performance:Number(form.performance||0)});};
-  return <Modal title="Add Staff" subtitle="Create a complete employee profile with payroll and performance information." close={close}><form onSubmit={submit}>
+  return <Modal title={initial ? "Edit Staff" : "Add Staff"} subtitle="Create a complete employee profile with payroll and performance information." close={close}><form onSubmit={submit}>
     <div className="form-section-label"><span>PERSONAL & CONTACT</span><small>Employee information</small></div><div className="modal-grid"><Field label="Staff name *" value={form.name} onChange={v=>update("name",v)} placeholder="Full name"/><SelectField label="Role" value={form.role} onChange={v=>update("role",v)} options={["Upholsterer","Master Upholsterer","Leather Technician","Stitching Specialist","Foam Technician","Helper","Driver","Manager"]}/><Field label="Phone" value={form.phone} onChange={v=>update("phone",v)} placeholder="+971 50 000 0000"/><Field label="Email" value={form.email} onChange={v=>update("email",v)} placeholder="staff@email.com"/><Field label="Address" value={form.address} onChange={v=>update("address",v)} placeholder="Dubai, UAE"/><Field label="Emergency contact" value={form.emergencyContact} onChange={v=>update("emergencyContact",v)} placeholder="Name · phone"/></div>
     <div className="form-section-label"><span>PAYROLL</span><small>Salary and bank details</small></div><div className="modal-grid"><Field label="Salary" type="number" value={form.salary} onChange={v=>update("salary",v)} placeholder="AED 0"/><SelectField label="Salary period" value={form.salaryPeriod} onChange={v=>update("salaryPeriod",v)} options={["Monthly","Weekly","Daily","Hourly"]}/><Field label="Joining date" type="date" value={form.joiningDate} onChange={v=>update("joiningDate",v)}/><Field label="Bank" value={form.bank} onChange={v=>update("bank",v)} placeholder="Bank name"/><Field label="IBAN" value={form.iban} onChange={v=>update("iban",v)} placeholder="AE..."/><SelectField label="Status" value={form.status} onChange={v=>update("status",v)} options={["Active","On Leave","Inactive"]}/></div>
     <div className="form-section-label"><span>PERFORMANCE</span><small>Track attendance and quality</small></div><div className="modal-grid"><Field label="Attendance %" type="number" value={form.attendance} onChange={v=>update("attendance",v)} placeholder="100"/><Field label="Performance %" type="number" value={form.performance} onChange={v=>update("performance",v)} placeholder="100"/></div><label className="field"><span>Staff notes</span><textarea rows="3" value={form.notes} onChange={e=>update("notes",e.target.value)} placeholder="Skills, responsibilities, salary notes, remarks..."/></label>
-    <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button type="submit" className="primary-button"><Save size={16}/> Save Staff</button></div></form></Modal>;
+    <div className="modal-footer"><button type="button" className="secondary-button" onClick={close}>Cancel</button><button type="submit" className="primary-button"><Save size={16}/> {initial ? "Update Staff" : "Save Staff"}</button></div></form></Modal>;
 }
 
 /* ============================================================
