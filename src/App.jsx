@@ -2818,28 +2818,54 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
       )}
 
       <div className="print-invoice-sheet">
-        <div className="print-sheet-brand"><div><strong>AL KANZ</strong><span>UPHOLSTERY</span></div><b>INVOICE</b></div>
-        <div className="print-sheet-line"/>
-        <div className="print-sheet-meta"><div><small>BILL TO</small><strong>{postPrintBill?.customer || "Customer"}</strong><span>{postPrintBill?.phone || ""}</span><span>{postPrintBill?.address || "Dubai, UAE"}</span></div><div><small>INVOICE</small><strong>{postPrintBill?.id || "—"}</strong><span>{postPrintBill ? new Date(postPrintBill.date).toLocaleDateString("en-AE") : ""}</span></div></div>
-        <div className="print-sheet-item"><div><strong>{postPrintBill?.item || "Upholstery service"}</strong><span>{postPrintBill?.description || ""}</span></div><strong>{money(postPrintBill?.total || 0)}</strong></div>
-        <div className="print-sheet-totals"><span>Subtotal <b>{money(postPrintBill?.total - (postPrintBill?.vat || 0) + (postPrintBill?.discount || 0))}</b></span><span>Discount <b>- {money(postPrintBill?.discount || 0)}</b></span><span>VAT <b>{money(postPrintBill?.vat || 0)}</b></span><strong>Total <b>{money(postPrintBill?.total || 0)}</b></strong><span>Paid <b>{money(postPrintBill?.paid || 0)}</b></span><span>Balance <b>{money(postPrintBill?.balance || 0)}</b></span></div>
-        <div className="print-sheet-footer">Thank you for choosing Al Kanz Upholstery · Dubai, UAE</div>
+        <div className="bill-template-header">
+          <div className="bill-brand-lockup"><div className="bill-brand-mark">AK</div><div><strong>AL KANZ</strong><span>UPHOLSTERY</span><small>Premium upholstery &amp; restoration</small></div></div>
+          <div className="bill-title-block"><span>TAX INVOICE</span><strong>{postPrintBill?.id || "—"}</strong><small>{postPrintBill ? new Date(postPrintBill.date).toLocaleDateString("en-AE") : ""}</small></div>
+        </div>
+        <div className="bill-accent-line"/>
+        <div className="bill-company-strip"><span>Dubai, United Arab Emirates</span><span>Upholstery · Repair · Custom Work</span></div>
+        <div className="bill-parties">
+          <div className="bill-party"><small>BILL TO</small><strong>{postPrintBill?.customer || "Customer"}</strong><span>{postPrintBill?.phone || "Phone not provided"}</span><span>{postPrintBill?.email || "Email not provided"}</span><span>{postPrintBill?.address || "Dubai, UAE"}</span></div>
+          <div className="bill-party bill-party-right"><small>PAYMENT STATUS</small><strong>{postPrintBill?.status || "Unpaid"}</strong><span>Payment method: {postPrintBill?.paymentMethod || "—"}</span><span>Invoice date: {postPrintBill ? new Date(postPrintBill.date).toLocaleDateString("en-AE") : "—"}</span></div>
+        </div>
+        <div className="bill-items-table">
+          <div className="bill-items-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>AMOUNT</span></div>
+          <div className="bill-items-row"><div><strong>{postPrintBill?.item || "Upholstery service"}</strong><span>{postPrintBill?.description || "Professional upholstery work"}</span></div><span>{postPrintBill?.quantity || 1}</span><span>{money(postPrintBill?.unitPrice || 0)}</span><strong>{money((postPrintBill?.quantity || 1) * (postPrintBill?.unitPrice || 0))}</strong></div>
+        </div>
+        <div className="bill-bottom-grid">
+          <div className="bill-thanks"><span>THANK YOU</span><strong>Thank you for choosing Al Kanz Upholstery.</strong><p>Please keep this invoice for your records. We appreciate your business.</p></div>
+          <div className="bill-total-box"><div><span>Subtotal</span><strong>{money((postPrintBill?.quantity || 1) * (postPrintBill?.unitPrice || 0))}</strong></div><div><span>Discount</span><strong>- {money(postPrintBill?.discount || 0)}</strong></div><div><span>VAT</span><strong>{money(postPrintBill?.vat || 0)}</strong></div><div className="bill-grand-total"><span>TOTAL</span><strong>{money(postPrintBill?.total || 0)}</strong></div><div><span>Paid</span><strong>{money(postPrintBill?.paid || 0)}</strong></div><div className="bill-balance"><span>Balance Due</span><strong>{money(postPrintBill?.balance || 0)}</strong></div></div>
+        </div>
+        <div className="bill-template-footer"><span>AL KANZ UPHOLSTERY</span><span>Dubai, UAE</span><span>Thank you for your trust.</span></div>
       </div>
 
       {selected && (
         <div className="modal-backdrop">
-          <div className="card" style={{width:"min(620px,94vw)",padding:"28px",position:"relative"}}>
-            <button className="job-drawer-close" style={{position:"absolute",right:18,top:18}} onClick={()=>setSelected(null)}><X size={20}/></button>
-            <span className="eyebrow">UAE INVOICE</span>
-            <h2 style={{margin:"8px 0 4px"}}>{selected.id}</h2>
-            <p style={{marginTop:0,color:"#718078"}}>Al Kanz Upholstery · Dubai</p>
-            <div className="table-card" style={{marginTop:20}}>
-              <div className="table-row"><span>Customer</span><strong>{selected.customer}</strong></div>
-              <div className="table-row"><span>Job</span><strong>{selected.jobId}</strong></div>
-              <div className="table-row"><span>Item</span><strong>{selected.item}</strong></div>
-              <div className="table-row"><span>Total</span><strong>{money(selected.amount)}</strong></div>
-              <div className="table-row"><span>Paid</span><strong>{money(selected.paid)}</strong></div>
-              <div className="table-row"><span>Balance</span><strong>{money(selected.balance)}</strong></div>
+          <div className="invoice-detail-modal">
+            <div className="invoice-detail-toolbar">
+              <div><span className="eyebrow">INVOICE DETAILS</span><strong>{selected.id}</strong></div>
+              <button className="job-drawer-close" onClick={()=>setSelected(null)}><X size={20}/></button>
+            </div>
+            <div className="invoice-paper-screen">
+              <div className="bill-template-header">
+                <div className="bill-brand-lockup"><div className="bill-brand-mark">AK</div><div><strong>AL KANZ</strong><span>UPHOLSTERY</span><small>Premium upholstery &amp; restoration</small></div></div>
+                <div className="bill-title-block"><span>TAX INVOICE</span><strong>{selected.id}</strong><small>{selected.date ? new Date(selected.date).toLocaleDateString("en-AE") : "—"}</small></div>
+              </div>
+              <div className="bill-accent-line"/>
+              <div className="bill-company-strip"><span>Dubai, United Arab Emirates</span><span>Upholstery · Repair · Custom Work</span></div>
+              <div className="bill-parties">
+                <div className="bill-party"><small>BILL TO</small><strong>{selected.customer || "Customer"}</strong><span>{selected.phone || "Phone not provided"}</span><span>{selected.email || "Email not provided"}</span><span>{selected.address || "Dubai, UAE"}</span></div>
+                <div className="bill-party bill-party-right"><small>PAYMENT STATUS</small><strong>{selected.status || (Number(selected.balance||0) <= 0 ? "Paid" : Number(selected.paid||0) > 0 ? "Part Paid" : "Unpaid")}</strong><span>Payment method: {selected.paymentMethod || "—"}</span><span>Job reference: {selected.jobId || "—"}</span></div>
+              </div>
+              <div className="bill-items-table">
+                <div className="bill-items-head"><span>DESCRIPTION</span><span>QTY</span><span>UNIT PRICE</span><span>AMOUNT</span></div>
+                <div className="bill-items-row"><div><strong>{selected.item || "Upholstery service"}</strong><span>{selected.work || selected.description || "Professional upholstery work"}</span></div><span>{selected.quantity || 1}</span><span>{money(selected.unitPrice || 0)}</span><strong>{money((selected.quantity || 1) * (selected.unitPrice || 0) || selected.amount || selected.total || 0)}</strong></div>
+              </div>
+              <div className="bill-bottom-grid">
+                <div className="bill-thanks"><span>THANK YOU</span><strong>Thank you for choosing Al Kanz Upholstery.</strong><p>Please keep this invoice for your records. We appreciate your business.</p></div>
+                <div className="bill-total-box"><div><span>Subtotal</span><strong>{money((selected.quantity || 1) * (selected.unitPrice || 0) || selected.amount || selected.total || 0)}</strong></div><div><span>Discount</span><strong>- {money(selected.discount || 0)}</strong></div><div><span>VAT</span><strong>{money(selected.vat || 0)}</strong></div><div className="bill-grand-total"><span>TOTAL</span><strong>{money(selected.total || selected.amount || 0)}</strong></div><div><span>Paid</span><strong>{money(selected.paid || 0)}</strong></div><div className="bill-balance"><span>Balance Due</span><strong>{money(selected.balance || 0)}</strong></div></div>
+              </div>
+              <div className="bill-template-footer"><span>AL KANZ UPHOLSTERY</span><span>Dubai, UAE</span><span>Thank you for your trust.</span></div>
             </div>
             <div className="invoice-contact-card">
               <div><span>PHONE</span><strong>{selected.phone || "Not saved"}</strong></div>
@@ -2847,26 +2873,25 @@ function BillingPage({ page, jobs, payments = [], transactions = [], outstanding
               <div><span>EMAIL</span><strong>{selected.email || "Not saved"}</strong></div>
             </div>
             <div className="invoice-share-center">
-              <div className="share-center-head"><div><span className="eyebrow">SEND INVOICE</span><strong>Choose a delivery channel</strong><small>The message is copied automatically so Botim can be used even when no direct deep-link is available.</small></div></div>
+              <div className="share-center-head"><div><span className="eyebrow">SEND INVOICE</span><strong>Choose a delivery channel</strong><small>Send the invoice using the customer's saved contact details.</small></div></div>
               <div className="post-print-actions">
-                <button type="button" className="share-btn whatsapp" onClick={()=>shareBill(selected,"whatsapp")}><MessageCircle size={17}/> WhatsApp</button>
-                <button type="button" className="share-btn botim" onClick={()=>shareBill(selected,"botim")}><MessageCircle size={17}/> Botim</button>
-                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"phone")}><Phone size={17}/> Call customer</button>
+                <button type="button" className="share-btn whatsapp" onClick={()=>shareBill(selected,"whatsapp")}><MessageCircle size={17}/> WhatsApp PDF</button>
+                <button type="button" className="share-btn botim" onClick={()=>shareBill(selected,"botim")}><MessageCircle size={17}/> Botim PDF</button>
+                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"phone")}><Phone size={17}/> Call</button>
                 <button type="button" className="share-btn" onClick={()=>shareBill(selected,"sms")}><Smartphone size={17}/> SMS</button>
-                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"email")}><Mail size={17}/> Email</button>
-                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"copy")}><Copy size={17}/> Copy message</button>
+                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"email")}><Mail size={17}/> Email PDF</button>
+                <button type="button" className="share-btn" onClick={()=>shareBill(selected,"copy")}><Copy size={17}/> Copy</button>
               </div>
             </div>
-            {selected.balance > 0 && recordPayment && (
-              <div style={{marginTop:20}}>
-                <label className="field"><span>Record payment</span><input type="number" min="0" max={selected.balance} value={payment} onChange={e=>setPayment(e.target.value)} placeholder="AED 0.00" /></label>
-                <button className="primary-button" style={{marginTop:12}} onClick={()=>{ recordPayment(selected.jobId, payment); setPayment(""); setSelected(null); }}><CreditCard size={16}/> Save Payment</button>
-              </div>
-            )}
-            <button className="secondary-button" style={{marginTop:12}} onClick={()=>window.print()}><Printer size={16}/> Print Invoice</button>
+            <div className="invoice-modal-actions">
+              {selected.balance > 0 && recordPayment && (<><label className="field invoice-payment-field"><span>Record payment</span><input type="number" min="0" max={selected.balance} value={payment} onChange={e=>setPayment(e.target.value)} placeholder="AED 0.00" /></label><button className="primary-button" onClick={()=>{ recordPayment(selected.jobId, payment); setPayment(""); setSelected(null); }}><CreditCard size={16}/> Save Payment</button></>)}
+              <button className="secondary-button" onClick={()=>window.print()}><Printer size={16}/> Print Invoice</button>
+              <button className="secondary-button" onClick={()=>setSelected(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}
+
     </>
   );
 }
